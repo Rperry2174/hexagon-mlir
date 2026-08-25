@@ -62,13 +62,17 @@ fi
 # 3. clang+llvm 13.0.1 host toolchain
 ########################################
 export HOST_TOOLCHAIN="${HEX_DEPS}/HOST_TOOLCHAIN"
-if [[ ! -x "${HOST_TOOLCHAIN}/bin/clang" ]]; then
+# Keyed off a stamp written after `tar` returns, not bin/clang: an interrupted
+# extraction can leave an executable clang behind while lib/, the headers, or lld
+# are still missing, and re-extracting over that tree is what repairs it.
+if [[ ! -f "${HOST_TOOLCHAIN}/.extracted" ]]; then
   echo "==> Downloading clang+llvm 13.0.1 host toolchain"
   mkdir -p "${HOST_TOOLCHAIN}"
   ( cd "${HOST_TOOLCHAIN}"
     wget -q --timeout=30 --tries=3 "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.1/clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
     tar -xf "clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz" --strip-components=1
     rm -f "clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz" )
+  touch "${HOST_TOOLCHAIN}/.extracted"
 fi
 export PATH="${HOST_TOOLCHAIN}/bin:${PATH}"
 export CC="${HOST_TOOLCHAIN}/bin/clang"
@@ -96,7 +100,10 @@ bash "${REPO_ROOT}/ci/setup_submodules.sh"
 # 5. Python virtual environment + requirements
 ########################################
 export CONDA_ENV="${HEX_DEPS}/mlir-env"
-if [[ ! -d "${CONDA_ENV}" ]]; then
+# Keyed off bin/activate, not the directory: `python3 -m venv` creates its target
+# before it finishes, so a failed run leaves a directory that cannot be sourced.
+# Re-running venv over it completes the missing pieces.
+if [[ ! -f "${CONDA_ENV}/bin/activate" ]]; then
   echo "==> Creating Python virtual environment"
   python3 -m venv "${CONDA_ENV}"
 fi
@@ -111,9 +118,16 @@ python -m pip install -r "${REPO_ROOT}/ci/hexagon-mlir-requirements.txt"
 LLVM_SRC_DIR="${HEX_DEPS}/LLVM_DIR/llvm-project"
 export LLVM_PROJECT_BUILD_DIR="${LLVM_SRC_DIR}/build"
 LLVM_SHA="$(tr -d '[:space:]' < "${REPO_ROOT}/triton/cmake/llvm-hash.txt")"
-# Keyed off the install prefix, not the build tree: the Triton build below consumes
-# install/{include,lib}, so a run interrupted before `cmake --install` must resume.
-if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]]; then
+LLVM_STAMP="${LLVM_PROJECT_BUILD_DIR}/install/.llvm-hash"
+LLVM_INSTALLED_SHA=""
+if [[ -f "${LLVM_STAMP}" ]]; then
+  LLVM_INSTALLED_SHA="$(tr -d '[:space:]' < "${LLVM_STAMP}")"
+fi
+# Keyed off a stamp written after `cmake --install`, not the build tree: the Triton
+# build below consumes install/{include,lib}, so a run interrupted before the install
+# must resume, and an install left from a superseded llvm-hash.txt must be redone so
+# Triton never links a stale revision.
+if [[ "${LLVM_INSTALLED_SHA}" != "${LLVM_SHA}" ]]; then
   echo "==> Building LLVM/MLIR (${LLVM_SHA})"
   # LLVM_APPEND_VC_REV=OFF: Cloud Agents rewrite github URLs to embed an access
   # token (url.<token>@github.com/.insteadOf), and LLVM refuses to embed a
@@ -149,8 +163,9 @@ if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]]; then
     -DCMAKE_INSTALL_PREFIX="${LLVM_PROJECT_BUILD_DIR}/install"
   cmake --build "${LLVM_PROJECT_BUILD_DIR}" -j"$(nproc)"
   cmake --install "${LLVM_PROJECT_BUILD_DIR}"
+  echo "${LLVM_SHA}" > "${LLVM_STAMP}"
 else
-  echo "==> LLVM already built and installed; skipping"
+  echo "==> LLVM already built and installed at ${LLVM_SHA}; skipping"
 fi
 
 ########################################

@@ -29,7 +29,7 @@ if [[ -n "${HEXAGON_SDK_ROOT:-}" ]]; then export HEXAGON_SDK_ROOT; fi
 if [[ -n "${HEXAGON_TOOLS:-}" ]]; then export HEXAGON_TOOLS; fi
 if [[ -n "${HEXKL_ROOT:-}" ]]; then export HEXKL_ROOT; fi
 
-if [[ -d "${CONDA_ENV}" ]]; then
+if [[ -f "${CONDA_ENV}/bin/activate" ]]; then
   # shellcheck disable=SC1091
   source "${CONDA_ENV}/bin/activate"
 fi
