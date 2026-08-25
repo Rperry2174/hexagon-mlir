@@ -49,7 +49,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 if ! ldconfig -p | grep -q 'libtinfo.so.5'; then
   echo "==> Installing libtinfo5"
   tmp_deb="$(mktemp -d)"
-  wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb" \
+  wget -q "https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb" \
     -O "${tmp_deb}/libtinfo5.deb"
   dpkg-deb -x "${tmp_deb}/libtinfo5.deb" "${tmp_deb}/x"
   sudo cp -a "${tmp_deb}"/x/lib/x86_64-linux-gnu/libtinfo.so.5* /usr/lib/x86_64-linux-gnu/
@@ -102,7 +102,9 @@ python -m pip install -r "${REPO_ROOT}/ci/hexagon-mlir-requirements.txt"
 LLVM_SRC_DIR="${HEX_DEPS}/LLVM_DIR/llvm-project"
 export LLVM_PROJECT_BUILD_DIR="${LLVM_SRC_DIR}/build"
 LLVM_SHA="$(tr -d '[:space:]' < "${REPO_ROOT}/triton/cmake/llvm-hash.txt")"
-if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/bin/mlir-opt" ]]; then
+# Keyed off the install prefix, not the build tree: the Triton build below consumes
+# install/{include,lib}, so a run interrupted before `cmake --install` must resume.
+if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]]; then
   echo "==> Building LLVM/MLIR (${LLVM_SHA})"
   mkdir -p "${HEX_DEPS}/LLVM_DIR"
   if [[ ! -d "${LLVM_SRC_DIR}/.git" ]]; then
@@ -132,7 +134,7 @@ if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/bin/mlir-opt" ]]; then
   cmake --build "${LLVM_PROJECT_BUILD_DIR}" -j"$(nproc)"
   cmake --install "${LLVM_PROJECT_BUILD_DIR}"
 else
-  echo "==> LLVM already built; skipping"
+  echo "==> LLVM already built and installed; skipping"
 fi
 
 ########################################
@@ -145,8 +147,7 @@ fi
 #   (b) placing them yourself and exporting HEXAGON_SDK_ROOT / HEXAGON_TOOLS /
 #       HEXKL_ROOT before running this script.
 ########################################
-if [[ -n "${HEXAGON_SDK_ROOT:-}" && -n "${HEXAGON_TOOLS:-}" && -n "${HEXKL_ROOT:-}" \
-      && -d "${HEXAGON_SDK_ROOT:-/nonexistent}" ]]; then
+if [[ -d "${HEXAGON_SDK_ROOT:-}" && -d "${HEXAGON_TOOLS:-}" && -d "${HEXKL_ROOT:-}" ]]; then
   echo "==> Hexagon SDK/Tools/HexKL detected; building Triton with the Hexagon backend"
   export HEXAGON_ARCH_VERSION="${HEXAGON_ARCH_VERSION:-75}"
   export TRITON_ROOT="${REPO_ROOT}/triton"
@@ -166,9 +167,9 @@ if [[ -n "${HEXAGON_SDK_ROOT:-}" && -n "${HEXAGON_TOOLS:-}" && -n "${HEXKL_ROOT:
 else
   echo "==> SKIPPING Triton/Hexagon backend build:"
   echo "    Hexagon SDK/Tools/HexKL not available."
-  echo "    Set HEXAGON_SDK_ROOT, HEXAGON_TOOLS, and HEXKL_ROOT (see comments above)"
-  echo "    to enable the full build. Everything else (LLVM/MLIR, host toolchain,"
-  echo "    submodules, Python env) is ready."
+  echo "    Point HEXAGON_SDK_ROOT, HEXAGON_TOOLS, and HEXKL_ROOT at the extracted"
+  echo "    directories (see comments above) to enable the full build. Everything"
+  echo "    else (LLVM/MLIR, host toolchain, submodules, Python env) is ready."
 fi
 
 echo "==> Hexagon-MLIR install complete"
