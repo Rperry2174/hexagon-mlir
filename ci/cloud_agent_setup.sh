@@ -108,6 +108,29 @@ else
   echo "libtinfo.so.5 already present; skipping."
 fi
 
+# The clang+llvm-13 host toolchain compiles and links C++ through the newest GCC
+# toolchain it finds (clang selects the highest /usr/lib/gcc/<triple>/<N>) and links
+# libstdc++ from that GCC's dev package. The base pod ships the GCC <N> runtime dir
+# (libgcc-<N>-dev, enough for C) but not its libstdc++-<N>-dev, so C compiles/links
+# fine while C++ linking fails with "cannot find -lstdc++" -- CMake then reports the
+# CXX compiler as broken at the LLVM configure step. Install the matching libstdc++
+# dev files for the newest installed GCC, idempotently (skip when already present).
+_gcc_triple_dir="/usr/lib/gcc/x86_64-linux-gnu"
+_newest_gcc="$(ls -1 "${_gcc_triple_dir}" 2>/dev/null | grep -E '^[0-9]+$' | sort -n | tail -n1)"
+if [ -n "${_newest_gcc}" ] && [ ! -e "${_gcc_triple_dir}/${_newest_gcc}/libstdc++.so" ]; then
+  echo "Installing libstdc++-${_newest_gcc}-dev (C++ stdlib for clang's selected GCC ${_newest_gcc})..."
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "libstdc++-${_newest_gcc}-dev" \
+    || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq g++
+elif [ -z "${_newest_gcc}" ]; then
+  echo "No GCC toolchain dir under ${_gcc_triple_dir}; installing g++ for a C++ stdlib..."
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq g++
+else
+  echo "libstdc++ dev for GCC ${_newest_gcc} already present; skipping."
+fi
+unset _gcc_triple_dir _newest_gcc
+
 echo ""
 echo "=== [1/5] Hexagon SDK, Tools, and Kernel Library ==="
 if [ ! -d "${HEXAGON_SDK_ROOT}" ] || [ ! -d "${HEXAGON_TOOLS}" ] || [ ! -d "${HEXKL_ROOT}" ]; then
