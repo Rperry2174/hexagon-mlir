@@ -88,8 +88,11 @@ def collect_session_tags():
     """
     tags = {
         "git_sha": _git_output("rev-parse", "--short", "HEAD") or "unknown",
+        # GITHUB_HEAD_REF first: it is only set for pull_request events, where
+        # GITHUB_REF_NAME is the merge ref ("42/merge") rather than the branch.
         "branch": (
-            os.environ.get("GITHUB_REF_NAME")
+            os.environ.get("GITHUB_HEAD_REF")
+            or os.environ.get("GITHUB_REF_NAME")
             or _git_output("rev-parse", "--abbrev-ref", "HEAD")
             or "unknown"
         ),
