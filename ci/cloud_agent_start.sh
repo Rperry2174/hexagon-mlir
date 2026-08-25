@@ -37,12 +37,14 @@ source "${ENV_FILE}"
 
 # 2. Rebuild the Triton editable install if the snapshot's build tree did not
 #    survive (guarded so this is normally a no-op fast path).
+MLIR_OPT="${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt"
 PY_VER="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo '')"
 BACKEND_DIR="${TRITON_ROOT}/build/cmake.linux-x86_64-cpython-${PY_VER}/third_party/qcom_hexagon_backend"
-if [ -x "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ] && [ -n "${PY_VER}" ] && [ ! -d "${BACKEND_DIR}" ]; then
+if [ -x "${MLIR_OPT}" ] && [ -n "${PY_VER}" ] && [ ! -d "${BACKEND_DIR}" ]; then
   echo "Triton build tree missing; rebuilding (LLVM is cached, this is incremental)..."
   if [ ! -d "${TRITON_ROOT}" ] || [ ! -d "${HEXAGON_MLIR_ROOT}/triton_shared" ]; then
-    "${SCRIPT_DIR}/setup_submodules.sh"
+    # ci/setup_submodules.sh is not executable in-repo.
+    bash "${SCRIPT_DIR}/setup_submodules.sh"
   fi
   "${SCRIPT_DIR}/cloud_agent_build_triton.sh"
 fi
@@ -50,5 +52,5 @@ fi
 # 3. Readiness summary.
 echo "hexagon-mlir environment ready."
 echo "  artifacts : ${MLIR_ARTIFACTS_DIR}"
-echo "  mlir-opt  : $(command -v mlir-opt 2>/dev/null || echo 'not found')"
+echo "  mlir-opt  : $([ -x "${MLIR_OPT}" ] && echo "${MLIR_OPT}" || echo 'not found')"
 echo "  triton    : $(python3 -c 'import triton,sys; sys.stdout.write(getattr(triton,"__version__","unknown"))' 2>/dev/null || echo 'not importable')"
