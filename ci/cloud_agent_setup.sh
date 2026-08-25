@@ -32,14 +32,20 @@ mkdir -p "${MLIR_ARTIFACTS_DIR}"
 
 echo ""
 echo "=== [0/5] System prerequisites ==="
-# The Cloud Agent base image ships clang but is missing two things Triton's
-# C-extension build needs. Install them idempotently (only when missing):
-#   * lld            - Triton is configured with TRITON_BUILD_WITH_CLANG_LLD=1,
-#                      so the compiler is driven with `-fuse-ld=lld`. Without a
-#                      system ld.lld the distro clang aborts with
-#                      "invalid linker name in argument '-fuse-ld=lld'".
-#   * python3-dev    - Triton's CMake runs find_package(Python3 Development.Module),
-#                      which needs the Python headers (/usr/include/pythonX.Y/Python.h).
+# The Cloud Agent base image ships a compiler toolchain (clang, gcc, cmake) but is
+# missing several packages the from-source LLVM build, the Python venv, and Triton's
+# C-extension build need. Install only the ones actually missing (idempotent):
+#   * lld          - Triton is configured with TRITON_BUILD_WITH_CLANG_LLD=1, so the
+#                    compiler is driven with `-fuse-ld=lld`; without a system ld.lld
+#                    clang aborts with "invalid linker name in argument '-fuse-ld=lld'".
+#   * python3-dev  - Triton's CMake runs find_package(Python3 Development.Module), which
+#                    needs the Python headers (/usr/include/pythonX.Y/Python.h).
+#   * python3-venv - `python3 -m venv` (step [2/5]) needs ensurepip, which Debian/Ubuntu
+#                    ship separately in python3-venv (absent -> "ensurepip is not available").
+#   * ninja-build  - cloud_agent_llvm.sh configures with `cmake -G Ninja` and Triton also
+#                    builds with Ninja; without it CMake aborts (no CMAKE_MAKE_PROGRAM).
+#   * ccache       - Triton builds with TRITON_BUILD_WITH_CCACHE=true and LLVM opts into
+#                    ccache when present; installing it keeps rebuilds fast and consistent.
 _prereq_pkgs=()
 if ! [ -x /usr/bin/ld.lld ]; then
   _prereq_pkgs+=(lld)
@@ -48,14 +54,28 @@ _py_header="$(python3 -c 'import os, sysconfig; print(os.path.join(sysconfig.get
 if [ -z "${_py_header}" ] || [ ! -f "${_py_header}" ]; then
   _prereq_pkgs+=(python3-dev)
 fi
+# Probe the real venv capability (create a throwaway venv *with* pip) instead of
+# testing a package name: Debian splits the ensurepip seed wheels into python3-venv,
+# so `import ensurepip` succeeds even when `python3 -m venv` cannot.
+_venv_probe="$(mktemp -d)"
+if ! python3 -m venv "${_venv_probe}/probe" >/dev/null 2>&1; then
+  _prereq_pkgs+=(python3-venv)
+fi
+rm -rf "${_venv_probe}"
+if ! command -v ninja >/dev/null 2>&1; then
+  _prereq_pkgs+=(ninja-build)
+fi
+if ! command -v ccache >/dev/null 2>&1; then
+  _prereq_pkgs+=(ccache)
+fi
 if [ "${#_prereq_pkgs[@]}" -gt 0 ]; then
   echo "Installing system prerequisites: ${_prereq_pkgs[*]}"
   sudo apt-get update -qq
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${_prereq_pkgs[@]}"
 else
-  echo "System prerequisites already present (lld, python3-dev); skipping."
+  echo "System prerequisites already present (lld, python3-dev, python3-venv, ninja-build, ccache); skipping."
 fi
-unset _prereq_pkgs _py_header
+unset _prereq_pkgs _py_header _venv_probe
 
 echo ""
 echo "=== [1/5] Hexagon SDK, Tools, and Kernel Library ==="
