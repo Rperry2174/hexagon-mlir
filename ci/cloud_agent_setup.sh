@@ -82,9 +82,13 @@ echo "=== [2/5] Python virtual environment ==="
 if [ ! -f "${MLIR_VENV}/bin/activate" ]; then
   echo "Creating virtual environment at ${MLIR_VENV}"
   python3 -m venv "${MLIR_VENV}"
+  # Re-source the shared env (which activates the new venv) rather than the
+  # venv's `activate`: activation starts with `deactivate nondestructive`, so
+  # activating a venv cloud_agent_env.sh already activated would restore the
+  # pre-activation PATH and drop the host toolchain and LLVM install dirs.
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/cloud_agent_env.sh"
 fi
-# shellcheck disable=SC1091
-source "${MLIR_VENV}/bin/activate"
 python3 -m pip install --upgrade pip setuptools wheel
 
 echo ""

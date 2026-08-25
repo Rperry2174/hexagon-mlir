@@ -39,9 +39,20 @@ else
   LLVM_CCACHE_BUILD="OFF"
 fi
 
+# The install prefix is all that survives a build, so it is stamped with the
+# commit it was produced from. Without that check a re-run after the Triton pin
+# moves would keep the previous LLVM and build Triton against the wrong headers.
+EXPECTED_LLVM_HASH="$(tr -d '[:space:]' < "${HEXAGON_MLIR_ROOT}/triton/cmake/llvm-hash.txt")"
+INSTALLED_HASH_FILE="${INSTALL_DIR}/.llvm-hash"
+echo "Expected LLVM commit hash for Triton: ${EXPECTED_LLVM_HASH}"
+
 if [ -x "${INSTALL_DIR}/bin/mlir-opt" ]; then
-  echo "LLVM/MLIR already installed at ${INSTALL_DIR}; skipping."
-  exit 0
+  if [ "$(cat "${INSTALLED_HASH_FILE}" 2>/dev/null)" = "${EXPECTED_LLVM_HASH}" ]; then
+    echo "LLVM/MLIR already installed at ${INSTALL_DIR}; skipping."
+    exit 0
+  fi
+  echo "LLVM install at ${INSTALL_DIR} was not built from ${EXPECTED_LLVM_HASH}; rebuilding."
+  rm -rf "${INSTALL_DIR}"
 fi
 
 # --- Host toolchain (clang/LLVM 13) ------------------------------------------
@@ -57,9 +68,6 @@ export CC="${HOST_TOOLCHAIN}/bin/clang"
 export CXX="${HOST_TOOLCHAIN}/bin/clang++"
 
 # --- LLVM source at the triton-pinned commit --------------------------------
-EXPECTED_LLVM_HASH="$(tr -d '[:space:]' < "${HEXAGON_MLIR_ROOT}/triton/cmake/llvm-hash.txt")"
-echo "Expected LLVM commit hash for Triton: ${EXPECTED_LLVM_HASH}"
-
 if [ -d "${LLVM_SRC}/.git" ]; then
   echo "Updating existing LLVM checkout to ${EXPECTED_LLVM_HASH}"
   git -C "${LLVM_SRC}" fetch --depth 1 origin "${EXPECTED_LLVM_HASH}"
@@ -102,6 +110,7 @@ ninja -C "${BUILD_DIR}" -j"$(nproc)"
 
 echo "Installing LLVM to ${INSTALL_DIR}..."
 ninja -C "${BUILD_DIR}" install
+printf '%s\n' "${EXPECTED_LLVM_HASH}" > "${INSTALLED_HASH_FILE}"
 
 # Reclaim disk: keep only the install prefix, drop the build tree + source.
 echo "Pruning LLVM build tree (keeping install prefix)..."
