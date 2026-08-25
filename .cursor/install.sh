@@ -73,6 +73,15 @@ export PATH="${HOST_TOOLCHAIN}/bin:${PATH}"
 export CC="${HOST_TOOLCHAIN}/bin/clang"
 export CXX="${HOST_TOOLCHAIN}/bin/clang++"
 
+# The prebuilt clang 13 auto-selects the highest-versioned GCC toolchain it
+# finds, and needs that toolchain's libstdc++.so (the -dev symlink) to link.
+# Install the matching libstdc++-<ver>-dev if it is missing.
+GCC_SEL="$("${CXX}" -v -E - </dev/null 2>&1 | sed -n 's#^Selected GCC installation: .*/\([0-9][0-9]*\)$#\1#p' | tail -1)"
+if [[ -n "${GCC_SEL}" && ! -e "/usr/lib/gcc/x86_64-linux-gnu/${GCC_SEL}/libstdc++.so" ]]; then
+  echo "==> Installing libstdc++-${GCC_SEL}-dev for clang's selected GCC toolchain"
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "libstdc++-${GCC_SEL}-dev"
+fi
+
 ########################################
 # 4. Triton + triton_shared submodules (+ Qualcomm patches)
 ########################################
@@ -106,6 +115,10 @@ LLVM_SHA="$(tr -d '[:space:]' < "${REPO_ROOT}/triton/cmake/llvm-hash.txt")"
 # install/{include,lib}, so a run interrupted before `cmake --install` must resume.
 if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]]; then
   echo "==> Building LLVM/MLIR (${LLVM_SHA})"
+  # LLVM_APPEND_VC_REV=OFF: Cloud Agents rewrite github URLs to embed an access
+  # token (url.<token>@github.com/.insteadOf), and LLVM refuses to embed a
+  # remote URL containing a password into its version string. Disabling the VC
+  # revision stamp avoids inspecting the remote entirely.
   mkdir -p "${HEX_DEPS}/LLVM_DIR"
   if [[ ! -d "${LLVM_SRC_DIR}/.git" ]]; then
     git clone --filter=blob:none https://github.com/llvm/llvm-project.git "${LLVM_SRC_DIR}"
@@ -129,6 +142,7 @@ if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]]; then
     -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
     -DLLVM_USE_LINKER=lld \
     -DLLVM_PARALLEL_LINK_JOBS=4 \
+    -DLLVM_APPEND_VC_REV=OFF \
     -DLLVM_DEFAULT_TARGET_TRIPLE="x86_64-unknown-linux-gnu" \
     -DCMAKE_INSTALL_PREFIX="${LLVM_PROJECT_BUILD_DIR}/install"
   cmake --build "${LLVM_PROJECT_BUILD_DIR}" -j"$(nproc)"
