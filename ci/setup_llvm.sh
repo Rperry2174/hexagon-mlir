@@ -8,11 +8,8 @@
 set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-# Build-artifact root (override with MLIR_ARTIFACTS_DIR; default preserves CI path)
-ARTIFACTS_DIR="${MLIR_ARTIFACTS_DIR:-/local/mnt/workspace/MLIR_build_artifacts}"
-
 # Setup HOST_TOOLCHAIN environment variable
-export HOST_TOOLCHAIN="${ARTIFACTS_DIR}/host_toolchain/"
+export HOST_TOOLCHAIN="/local/mnt/workspace/MLIR_build_artifacts/host_toolchain/"
 # if HOST_TOOLCHAIN does not exist, download and set it up
 if [ ! -d "${HOST_TOOLCHAIN}" ]; then
   echo "HOST_TOOLCHAIN not found at ${HOST_TOOLCHAIN}. Downloading and setting up..."
@@ -40,7 +37,7 @@ EXPECTED_LLVM_HASH=$(cat "${REPO_ROOT}/triton/cmake/llvm-hash.txt" | tr -d '[:sp
 echo "Expected LLVM commit hash for Triton: ${EXPECTED_LLVM_HASH}"
 
 # Setup LLVM installation directory
-LLVM_INSTALL_DIR="${ARTIFACTS_DIR}/llvm_triton"
+LLVM_INSTALL_DIR="/local/mnt/workspace/MLIR_build_artifacts/llvm_triton"
 mkdir -p "${LLVM_INSTALL_DIR}"
 
 # Clone the LLVM repository if not already present
@@ -62,12 +59,8 @@ mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
 
 echo "Configuring LLVM build with CMake..."
-# LLVM_APPEND_VC_REV=OFF: some CI/agent environments rewrite github.com remote
-# URLs to embed an access token; stamping that URL into the version string
-# breaks the build (and would leak the token), so skip the VC revision stamp.
 cmake -G "Ninja" ../llvm-project/llvm \
     -DLLVM_ENABLE_PROJECTS="llvm;mlir;lld" \
-    -DLLVM_APPEND_VC_REV=OFF \
     -DCMAKE_C_COMPILER=${CC} \
     -DCMAKE_CXX_COMPILER=${CXX} \
     -DCMAKE_ASM_COMPILER=${CC} \

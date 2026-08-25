@@ -37,6 +37,12 @@ if [ ! -d "${HEXAGON_SDK_ROOT}" ] || [ ! -d "${HEXAGON_TOOLS}" ] || [ ! -d "${HE
   # which matches the default MLIR_ARTIFACTS_DIR.
   chmod +x "${SCRIPT_DIR}/setup_tools.sh"
   "${SCRIPT_DIR}/setup_tools.sh"
+  # Drop the downloaded archives once extracted to save disk / snapshot size.
+  echo "Removing downloaded SDK/Tools/KL archives to reclaim disk..."
+  rm -f "${MLIR_ARTIFACTS_DIR}"/Hexagon_SDK_lnx.zip \
+        "${MLIR_ARTIFACTS_DIR}"/Hexagon_open_access.Core.*.tar.gz \
+        "${MLIR_ARTIFACTS_DIR}"/Hexagon_KL/*.zip \
+        "${MLIR_ARTIFACTS_DIR}"/Hexagon_KL/*.Linux-Any.zip 2>/dev/null || true
   # Re-resolve HEXKL_ROOT now that the Kernel Library has been extracted.
   # shellcheck disable=SC1091
   source "${SCRIPT_DIR}/cloud_agent_env.sh"
@@ -65,12 +71,7 @@ python3 -m pip install -r "${HEXAGON_MLIR_ROOT}/ci/requirements.txt"
 
 echo ""
 echo "=== [4/5] LLVM/MLIR (from source) ==="
-if [ ! -x "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]; then
-  chmod +x "${SCRIPT_DIR}/setup_llvm.sh"
-  "${SCRIPT_DIR}/setup_llvm.sh"
-else
-  echo "LLVM already built at ${LLVM_PROJECT_BUILD_DIR}/install; skipping."
-fi
+"${SCRIPT_DIR}/cloud_agent_llvm.sh"
 
 echo ""
 echo "=== [5/5] Build Triton + Hexagon backend ==="

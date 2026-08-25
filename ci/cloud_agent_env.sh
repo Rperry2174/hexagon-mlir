@@ -66,4 +66,8 @@ fi
 export PYTHONPATH="${TRITON_ROOT}/python:${PYTHONPATH:-}"
 export PATH="${HOST_TOOLCHAIN}/bin:${PATH}"
 
+# LLVM/MLIR tools (mlir-opt, mlir-translate, llc, FileCheck, ...) from the
+# from-source install prefix, needed for development and the LIT tests.
+export PATH="${LLVM_PROJECT_BUILD_DIR}/install/bin:${PATH}"
+
 unset _HEXAGON_MLIR_ENV_SELF
