@@ -77,6 +77,37 @@ else
 fi
 unset _prereq_pkgs _py_header _venv_probe
 
+# The pinned host toolchain (clang+llvm 13.0.1, an Ubuntu-18.04 build fetched by
+# cloud_agent_llvm.sh) links against the ncurses ABI-5 library libtinfo.so.5 and
+# needs its versioned symbol NCURSES_TINFO_5.0.19991023. Ubuntu 24.04 ships only
+# libtinfo.so.6 (whose version node was renamed to NCURSES6_TINFO_*) and dropped
+# the libtinfo5 package, so on a fresh pod clang-13 aborts at exec time -- exit
+# 127, "libtinfo.so.5: cannot open shared object file" (or, with a naive .so.6
+# symlink, "version `NCURSES_TINFO_5.0.19991023' not found"), which surfaces as
+# CMake's "C compiler ... is broken" at the LLVM configure step. Provide the real
+# ABI-5 library idempotently: prefer the distro package, else fetch the .deb from
+# the Ubuntu pool (the usual path on noble) and register it with dpkg.
+if ! [ -e /usr/lib/x86_64-linux-gnu/libtinfo.so.5 ] && ! [ -e /lib/x86_64-linux-gnu/libtinfo.so.5 ]; then
+  echo "Providing libtinfo.so.5 (ncurses ABI 5) for the clang+llvm-13 host toolchain..."
+  if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libtinfo5 2>/dev/null; then
+    _ncurses_pool="http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/"
+    _libtinfo5_deb="$(wget --no-verbose -O- "${_ncurses_pool}" 2>/dev/null \
+      | grep -oE 'libtinfo5_[^"]+_amd64\.deb' | sort -uV | tail -n1)"
+    if [ -z "${_libtinfo5_deb}" ]; then
+      echo "ERROR: could not locate a libtinfo5 .deb under ${_ncurses_pool}" >&2
+      exit 1
+    fi
+    echo "Fetching ${_libtinfo5_deb} from the Ubuntu pool..."
+    wget --no-verbose --continue --tries=5 --timeout=60 --waitretry=10 \
+      "${_ncurses_pool}${_libtinfo5_deb}" -O /tmp/libtinfo5.deb
+    sudo dpkg -i /tmp/libtinfo5.deb || sudo DEBIAN_FRONTEND=noninteractive apt-get -y -f install
+    rm -f /tmp/libtinfo5.deb
+  fi
+  sudo ldconfig
+else
+  echo "libtinfo.so.5 already present; skipping."
+fi
+
 echo ""
 echo "=== [1/5] Hexagon SDK, Tools, and Kernel Library ==="
 if [ ! -d "${HEXAGON_SDK_ROOT}" ] || [ ! -d "${HEXAGON_TOOLS}" ] || [ ! -d "${HEXKL_ROOT}" ]; then
