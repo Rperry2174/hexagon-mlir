@@ -127,10 +127,11 @@ select the `hexagon-mlir.tests` service.
   import-guarded: the backend never requires `pyroscope-io` at runtime, and
   all tagging errors are swallowed. Profiling can never break a build or a
   test run.
-- The Python SDK samples the Python process (and, with
-  `detect_subprocesses`, its children). Native frames inside pybind11 calls
-  (MLIR pass manager, LLVM codegen) appear under the Python frame that
-  invoked them — enough to attribute time to pipeline stages. For
+- The Python SDK samples the Python test process. Native work inside pybind11
+  calls (MLIR pass manager, LLVM codegen) and subprocesses
+  (`triton-shared-opt`, the Hexagon toolchain) is attributed to the Python
+  frame that invoked and waits on it — enough to attribute time to pipeline
+  stages. For
   native-level C++ flame graphs of `linalg-hexagon-opt`/LLVM internals, the
   next step is host-level [eBPF profiling via Grafana
   Alloy](https://grafana.com/docs/pyroscope/latest/configure-client/grafana-alloy/ebpf/)

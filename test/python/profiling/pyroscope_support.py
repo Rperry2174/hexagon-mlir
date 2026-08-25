@@ -145,9 +145,6 @@ class PyroscopeSession:
             "application_name": self.application_name,
             "server_address": self.server_address,
             "sample_rate": 100,
-            # The Hexagon backend shells out to triton-shared-opt and other
-            # tools; profile those Python children too when they exist.
-            "detect_subprocesses": True,
             "tags": tags,
         }
         username = os.environ.get(ENV_USERNAME)

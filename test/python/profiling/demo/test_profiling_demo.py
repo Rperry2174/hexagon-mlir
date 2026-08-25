@@ -98,7 +98,7 @@ def _generate_lwp_trace(tmp_path, outer_iterations):
 
 @pytest.mark.parametrize(
     "outer_iterations,repeats",
-    [(20_000, 4), (100_000, 8)],
+    [(20_000, 60), (100_000, 45)],
     ids=["small_trace", "large_trace"],
 )
 def test_lwp_postprocessing(tmp_path, outer_iterations, repeats):
@@ -177,7 +177,7 @@ def test_mlir_corpus_op_census(census):
     texts = [path.read_text(errors="replace") for path in _corpus_files()]
 
     dialect_counts, op_counts = None, None
-    for _ in range(40):
+    for _ in range(800):
         dialect_counts, op_counts = census(texts)
 
     # Both implementations must at least agree on the corpus fundamentals.
