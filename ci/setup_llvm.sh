@@ -62,8 +62,12 @@ mkdir -p "${BUILD_DIR}"
 cd "${BUILD_DIR}"
 
 echo "Configuring LLVM build with CMake..."
+# LLVM_APPEND_VC_REV=OFF: some CI/agent environments rewrite github.com remote
+# URLs to embed an access token; stamping that URL into the version string
+# breaks the build (and would leak the token), so skip the VC revision stamp.
 cmake -G "Ninja" ../llvm-project/llvm \
     -DLLVM_ENABLE_PROJECTS="llvm;mlir;lld" \
+    -DLLVM_APPEND_VC_REV=OFF \
     -DCMAKE_C_COMPILER=${CC} \
     -DCMAKE_CXX_COMPILER=${CXX} \
     -DCMAKE_ASM_COMPILER=${CC} \
