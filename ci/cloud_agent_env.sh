@@ -18,7 +18,9 @@ export TRITON_ROOT="${HEXAGON_MLIR_ROOT}/triton"
 
 # Persistent, repo-independent build artifacts. This directory is captured in
 # the environment snapshot so the expensive LLVM/SDK downloads are reused.
-export MLIR_ARTIFACTS_DIR="${MLIR_ARTIFACTS_DIR:-/local/mnt/workspace/MLIR_build_artifacts}"
+# A home-dir default keeps it writable without root on the Cloud Agent VM;
+# the CI scripts still fall back to /local/... when MLIR_ARTIFACTS_DIR is unset.
+export MLIR_ARTIFACTS_DIR="${MLIR_ARTIFACTS_DIR:-${HOME}/mlir_build_artifacts}"
 
 # Hexagon SDK / Tools / Kernel Library (downloaded by ci/setup_tools.sh).
 export HEXAGON_SDK_VERSION="6.4.0.2"
