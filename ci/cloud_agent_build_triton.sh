@@ -15,8 +15,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/cloud_agent_env.sh"
-# shellcheck disable=SC1091
-source "${MLIR_VENV}/bin/activate"
+# cloud_agent_env.sh already activates the venv. Do not re-activate it here: that
+# restores the pre-activation PATH, dropping the host toolchain and LLVM install
+# directories that clang/lld are found through.
 
 LLVM_INSTALL_DIR="${LLVM_PROJECT_BUILD_DIR}/install"
 if [ ! -x "${LLVM_INSTALL_DIR}/bin/mlir-opt" ]; then

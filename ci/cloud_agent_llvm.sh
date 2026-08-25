@@ -31,6 +31,13 @@ LLVM_SRC="${LLVM_TOP}/llvm-project"
 BUILD_DIR="${LLVM_PROJECT_BUILD_DIR}"          # ${LLVM_TOP}/build
 INSTALL_DIR="${BUILD_DIR}/install"
 LLVM_BUILD_TYPE="${LLVM_CMAKE_BUILD_TYPE:-Release}"
+# LLVM's CMake aborts when LLVM_CCACHE_BUILD is ON but ccache is not on PATH, and
+# the Cloud Agent image does not ship it; opt in only when it is available.
+if command -v ccache >/dev/null 2>&1; then
+  LLVM_CCACHE_BUILD="ON"
+else
+  LLVM_CCACHE_BUILD="OFF"
+fi
 
 if [ -x "${INSTALL_DIR}/bin/mlir-opt" ]; then
   echo "LLVM/MLIR already installed at ${INSTALL_DIR}; skipping."
@@ -82,7 +89,7 @@ cmake -G Ninja -S "${LLVM_SRC}/llvm" -B "${BUILD_DIR}" \
     -DCMAKE_BUILD_TYPE="${LLVM_BUILD_TYPE}" \
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_ENABLE_RTTI=ON \
-    -DLLVM_CCACHE_BUILD=ON \
+    -DLLVM_CCACHE_BUILD="${LLVM_CCACHE_BUILD}" \
     -DLLVM_ENABLE_EH=ON \
     -DLLVM_BUILD_EXAMPLES=OFF \
     -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
