@@ -31,6 +31,21 @@ echo "======================================================================"
 mkdir -p "${MLIR_ARTIFACTS_DIR}"
 
 echo ""
+echo "=== [0/5] System prerequisites ==="
+# Triton is built with TRITON_BUILD_WITH_CLANG_LLD=1, which drives the C/C++
+# compiler with `-fuse-ld=lld`. If that compiler ever resolves to the distro
+# clang (/usr/bin/clang++) it needs a matching /usr/bin/ld.lld, otherwise it
+# aborts with "invalid linker name in argument '-fuse-ld=lld'". The base image
+# ships clang but not lld, so install it (idempotent; only runs when missing).
+if ! [ -x /usr/bin/ld.lld ]; then
+  echo "Installing lld (provides /usr/bin/ld.lld)..."
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq lld
+else
+  echo "lld already present (/usr/bin/ld.lld); skipping."
+fi
+
+echo ""
 echo "=== [1/5] Hexagon SDK, Tools, and Kernel Library ==="
 if [ ! -d "${HEXAGON_SDK_ROOT}" ] || [ ! -d "${HEXAGON_TOOLS}" ] || [ ! -d "${HEXKL_ROOT}" ]; then
   # setup_tools.sh installs into /local/mnt/workspace/MLIR_build_artifacts,
