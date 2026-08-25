@@ -22,9 +22,12 @@ export TRITON_PLUGIN_DIRS="${REPO_ROOT}/triton_shared;${REPO_ROOT}/qcom_hexagon_
 export HEXAGON_ARCH_VERSION="${HEXAGON_ARCH_VERSION:-75}"
 
 # Qualcomm Hexagon SDK/Tools/HexKL (set these to your extracted locations).
-export HEXAGON_SDK_ROOT="${HEXAGON_SDK_ROOT:-}"
-export HEXAGON_TOOLS="${HEXAGON_TOOLS:-}"
-export HEXKL_ROOT="${HEXKL_ROOT:-}"
+# Only exported when actually provided: the backend CMake uses
+# `DEFINED ENV{...}`, which is true for an exported empty value and would skip
+# its "not set" fatal errors.
+if [[ -n "${HEXAGON_SDK_ROOT:-}" ]]; then export HEXAGON_SDK_ROOT; fi
+if [[ -n "${HEXAGON_TOOLS:-}" ]]; then export HEXAGON_TOOLS; fi
+if [[ -n "${HEXKL_ROOT:-}" ]]; then export HEXKL_ROOT; fi
 
 if [[ -d "${CONDA_ENV}" ]]; then
   # shellcheck disable=SC1091

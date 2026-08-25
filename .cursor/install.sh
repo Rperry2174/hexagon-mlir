@@ -49,7 +49,8 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 if ! ldconfig -p | grep -q 'libtinfo.so.5'; then
   echo "==> Installing libtinfo5"
   tmp_deb="$(mktemp -d)"
-  wget -q "https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb" \
+  wget -q --timeout=30 --tries=3 \
+    "https://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb" \
     -O "${tmp_deb}/libtinfo5.deb"
   dpkg-deb -x "${tmp_deb}/libtinfo5.deb" "${tmp_deb}/x"
   sudo cp -a "${tmp_deb}"/x/lib/x86_64-linux-gnu/libtinfo.so.5* /usr/lib/x86_64-linux-gnu/
@@ -65,7 +66,7 @@ if [[ ! -x "${HOST_TOOLCHAIN}/bin/clang" ]]; then
   echo "==> Downloading clang+llvm 13.0.1 host toolchain"
   mkdir -p "${HOST_TOOLCHAIN}"
   ( cd "${HOST_TOOLCHAIN}"
-    wget -q "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.1/clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+    wget -q --timeout=30 --tries=3 "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.1/clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
     tar -xf "clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz" --strip-components=1
     rm -f "clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz" )
 fi
@@ -84,13 +85,12 @@ fi
 
 ########################################
 # 4. Triton + triton_shared submodules (+ Qualcomm patches)
+#    Run unconditionally: setup_submodules.sh clones only what is missing and
+#    always re-runs the idempotent patch step, so a previous run that cloned but
+#    failed to patch is recovered here.
 ########################################
-if [[ ! -d "${REPO_ROOT}/triton" || ! -d "${REPO_ROOT}/triton_shared" ]]; then
-  echo "==> Setting up triton and triton_shared submodules"
-  bash "${REPO_ROOT}/ci/setup_submodules.sh"
-else
-  echo "==> Submodules already present; skipping"
-fi
+echo "==> Setting up triton and triton_shared submodules"
+bash "${REPO_ROOT}/ci/setup_submodules.sh"
 
 ########################################
 # 5. Python virtual environment + requirements
@@ -123,7 +123,9 @@ if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/install/bin/mlir-opt" ]]; then
   if [[ ! -d "${LLVM_SRC_DIR}/.git" ]]; then
     git clone --filter=blob:none https://github.com/llvm/llvm-project.git "${LLVM_SRC_DIR}"
   fi
-  ( cd "${LLVM_SRC_DIR}" && git checkout "${LLVM_SHA}" )
+  # Fetch first: an existing clone predating an llvm-hash.txt bump does not have
+  # the pinned commit yet.
+  ( cd "${LLVM_SRC_DIR}" && git fetch origin && git checkout "${LLVM_SHA}" )
   cmake -G Ninja \
     -S "${LLVM_SRC_DIR}/llvm" \
     -B "${LLVM_PROJECT_BUILD_DIR}" \
