@@ -32,18 +32,30 @@ mkdir -p "${MLIR_ARTIFACTS_DIR}"
 
 echo ""
 echo "=== [0/5] System prerequisites ==="
-# Triton is built with TRITON_BUILD_WITH_CLANG_LLD=1, which drives the C/C++
-# compiler with `-fuse-ld=lld`. If that compiler ever resolves to the distro
-# clang (/usr/bin/clang++) it needs a matching /usr/bin/ld.lld, otherwise it
-# aborts with "invalid linker name in argument '-fuse-ld=lld'". The base image
-# ships clang but not lld, so install it (idempotent; only runs when missing).
+# The Cloud Agent base image ships clang but is missing two things Triton's
+# C-extension build needs. Install them idempotently (only when missing):
+#   * lld            - Triton is configured with TRITON_BUILD_WITH_CLANG_LLD=1,
+#                      so the compiler is driven with `-fuse-ld=lld`. Without a
+#                      system ld.lld the distro clang aborts with
+#                      "invalid linker name in argument '-fuse-ld=lld'".
+#   * python3-dev    - Triton's CMake runs find_package(Python3 Development.Module),
+#                      which needs the Python headers (/usr/include/pythonX.Y/Python.h).
+_prereq_pkgs=()
 if ! [ -x /usr/bin/ld.lld ]; then
-  echo "Installing lld (provides /usr/bin/ld.lld)..."
-  sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq lld
-else
-  echo "lld already present (/usr/bin/ld.lld); skipping."
+  _prereq_pkgs+=(lld)
 fi
+_py_header="$(python3 -c 'import os, sysconfig; print(os.path.join(sysconfig.get_path("include"), "Python.h"))' 2>/dev/null || true)"
+if [ -z "${_py_header}" ] || [ ! -f "${_py_header}" ]; then
+  _prereq_pkgs+=(python3-dev)
+fi
+if [ "${#_prereq_pkgs[@]}" -gt 0 ]; then
+  echo "Installing system prerequisites: ${_prereq_pkgs[*]}"
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${_prereq_pkgs[@]}"
+else
+  echo "System prerequisites already present (lld, python3-dev); skipping."
+fi
+unset _prereq_pkgs _py_header
 
 echo ""
 echo "=== [1/5] Hexagon SDK, Tools, and Kernel Library ==="
