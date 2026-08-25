@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+#
+# Cloud Agent install script for Hexagon-MLIR.
+#
+# This prepares everything that can be built from open sources:
+#   - system build tools
+#   - clang+llvm 13.0.1 host toolchain (used as CC/CXX/lld)
+#   - triton + triton_shared submodules with the Qualcomm patches applied
+#   - a Python virtual environment with the build requirements
+#   - LLVM/MLIR built at the commit pinned by triton
+#
+# The Qualcomm Hexagon SDK, Hexagon Tools, and HexKL are distributed only
+# through Qualcomm Software Center (login + license required) and are NOT
+# fetched here by default. When they are made available (see the guard near the
+# bottom), this script also builds Triton with the Hexagon backend and runs the
+# LIT tests.
+#
+# The script is idempotent: re-running it skips work that is already complete.
+#
+# Out-of-tree build artifacts live under $HEX_DEPS (default: $HOME/hexagon-mlir-deps).
+# The repository's own scripts write to the repo's *parent* directory; that path
+# is not writable in a Cloud Agent (the repo is checked out at /workspace), so we
+# use a dedicated writable directory instead.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export HEXAGON_MLIR_ROOT="${REPO_ROOT}"
+HEX_DEPS="${HEX_DEPS:-$HOME/hexagon-mlir-deps}"
+mkdir -p "${HEX_DEPS}"
+
+echo "==> Hexagon-MLIR install"
+echo "    REPO_ROOT=${REPO_ROOT}"
+echo "    HEX_DEPS=${HEX_DEPS}"
+
+########################################
+# 1. System packages
+########################################
+echo "==> Installing system packages"
+sudo apt-get update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  build-essential cmake ninja-build ccache git wget curl unzip \
+  python3-dev python3-venv python3-pip clang-format
+
+########################################
+# 2. libtinfo5 (required by the clang+llvm 13.0.1 host toolchain)
+#    Ubuntu 24.04 ships libtinfo6; the prebuilt clang 13 needs the versioned
+#    libtinfo.so.5, so we install it from the Ubuntu archive if missing.
+########################################
+if ! ldconfig -p | grep -q 'libtinfo.so.5'; then
+  echo "==> Installing libtinfo5"
+  tmp_deb="$(mktemp -d)"
+  wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2_amd64.deb" \
+    -O "${tmp_deb}/libtinfo5.deb"
+  dpkg-deb -x "${tmp_deb}/libtinfo5.deb" "${tmp_deb}/x"
+  sudo cp -a "${tmp_deb}"/x/lib/x86_64-linux-gnu/libtinfo.so.5* /usr/lib/x86_64-linux-gnu/
+  sudo ldconfig
+  rm -rf "${tmp_deb}"
+fi
+
+########################################
+# 3. clang+llvm 13.0.1 host toolchain
+########################################
+export HOST_TOOLCHAIN="${HEX_DEPS}/HOST_TOOLCHAIN"
+if [[ ! -x "${HOST_TOOLCHAIN}/bin/clang" ]]; then
+  echo "==> Downloading clang+llvm 13.0.1 host toolchain"
+  mkdir -p "${HOST_TOOLCHAIN}"
+  ( cd "${HOST_TOOLCHAIN}"
+    wget -q "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.1/clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz"
+    tar -xf "clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz" --strip-components=1
+    rm -f "clang+llvm-13.0.1-x86_64-linux-gnu-ubuntu-18.04.tar.xz" )
+fi
+export PATH="${HOST_TOOLCHAIN}/bin:${PATH}"
+export CC="${HOST_TOOLCHAIN}/bin/clang"
+export CXX="${HOST_TOOLCHAIN}/bin/clang++"
+
+########################################
+# 4. Triton + triton_shared submodules (+ Qualcomm patches)
+########################################
+if [[ ! -d "${REPO_ROOT}/triton" || ! -d "${REPO_ROOT}/triton_shared" ]]; then
+  echo "==> Setting up triton and triton_shared submodules"
+  bash "${REPO_ROOT}/ci/setup_submodules.sh"
+else
+  echo "==> Submodules already present; skipping"
+fi
+
+########################################
+# 5. Python virtual environment + requirements
+########################################
+export CONDA_ENV="${HEX_DEPS}/mlir-env"
+if [[ ! -d "${CONDA_ENV}" ]]; then
+  echo "==> Creating Python virtual environment"
+  python3 -m venv "${CONDA_ENV}"
+fi
+# shellcheck disable=SC1091
+source "${CONDA_ENV}/bin/activate"
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r "${REPO_ROOT}/ci/hexagon-mlir-requirements.txt"
+
+########################################
+# 6. Build LLVM/MLIR at the commit pinned by triton
+########################################
+LLVM_SRC_DIR="${HEX_DEPS}/LLVM_DIR/llvm-project"
+export LLVM_PROJECT_BUILD_DIR="${LLVM_SRC_DIR}/build"
+LLVM_SHA="$(tr -d '[:space:]' < "${REPO_ROOT}/triton/cmake/llvm-hash.txt")"
+if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/bin/mlir-opt" ]]; then
+  echo "==> Building LLVM/MLIR (${LLVM_SHA})"
+  mkdir -p "${HEX_DEPS}/LLVM_DIR"
+  if [[ ! -d "${LLVM_SRC_DIR}/.git" ]]; then
+    git clone --filter=blob:none https://github.com/llvm/llvm-project.git "${LLVM_SRC_DIR}"
+  fi
+  ( cd "${LLVM_SRC_DIR}" && git checkout "${LLVM_SHA}" )
+  cmake -G Ninja \
+    -S "${LLVM_SRC_DIR}/llvm" \
+    -B "${LLVM_PROJECT_BUILD_DIR}" \
+    -DLLVM_ENABLE_PROJECTS="llvm;mlir;lld" \
+    -DCMAKE_C_COMPILER="${CC}" \
+    -DCMAKE_CXX_COMPILER="${CXX}" \
+    -DCMAKE_ASM_COMPILER="${CC}" \
+    -DLLVM_INSTALL_UTILS=ON \
+    -DLLVM_TARGETS_TO_BUILD="AMDGPU;NVPTX;X86;Hexagon" \
+    -DCMAKE_BUILD_TYPE="RelWithDebInfo" \
+    -DLLVM_ENABLE_ASSERTIONS=ON \
+    -DLLVM_ENABLE_RTTI=ON \
+    -DLLVM_CCACHE_BUILD:BOOL=ON \
+    -DLLVM_ENABLE_EH=ON \
+    -DLLVM_BUILD_EXAMPLES:BOOL=OFF \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+    -DLLVM_USE_LINKER=lld \
+    -DLLVM_PARALLEL_LINK_JOBS=4 \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="x86_64-unknown-linux-gnu" \
+    -DCMAKE_INSTALL_PREFIX="${LLVM_PROJECT_BUILD_DIR}/install"
+  cmake --build "${LLVM_PROJECT_BUILD_DIR}" -j"$(nproc)"
+  cmake --install "${LLVM_PROJECT_BUILD_DIR}"
+else
+  echo "==> LLVM already built; skipping"
+fi
+
+########################################
+# 7. Qualcomm Hexagon SDK / Tools / HexKL (gated) + Triton backend build
+#
+# These three artifacts come from Qualcomm Software Center (login + license) and
+# are not fetched by default. Provide them by either:
+#   (a) allowlisting softwarecenter.qualcomm.com so ci/setup_tools.sh can fetch
+#       them (only if anonymous download is possible), or
+#   (b) placing them yourself and exporting HEXAGON_SDK_ROOT / HEXAGON_TOOLS /
+#       HEXKL_ROOT before running this script.
+########################################
+if [[ -n "${HEXAGON_SDK_ROOT:-}" && -n "${HEXAGON_TOOLS:-}" && -n "${HEXKL_ROOT:-}" \
+      && -d "${HEXAGON_SDK_ROOT:-/nonexistent}" ]]; then
+  echo "==> Hexagon SDK/Tools/HexKL detected; building Triton with the Hexagon backend"
+  export HEXAGON_ARCH_VERSION="${HEXAGON_ARCH_VERSION:-75}"
+  export TRITON_ROOT="${REPO_ROOT}/triton"
+  PYTHON_VERSION="$(python3 -c 'import sys;print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  export TRITON_SHARED_OPT_PATH="${TRITON_ROOT}/build/cmake.linux-x86_64-cpython-${PYTHON_VERSION}/third_party/triton_shared/tools/triton-shared-opt/triton-shared-opt"
+  export TRITON_HOME="${REPO_ROOT}"
+  export TRITON_PLUGIN_DIRS="${REPO_ROOT}/triton_shared;${REPO_ROOT}/qcom_hexagon_backend"
+  ( cd "${TRITON_ROOT}"
+    TRITON_BUILD_WITH_CLANG_LLD=1 \
+    TRITON_BUILD_WITH_CCACHE=true \
+    LLVM_INCLUDE_DIRS="${LLVM_PROJECT_BUILD_DIR}/install/include" \
+    LLVM_LIBRARY_DIR="${LLVM_PROJECT_BUILD_DIR}/install/lib" \
+    LLVM_SYSPATH="${LLVM_PROJECT_BUILD_DIR}/install" \
+    pip install -e . --no-build-isolation --verbose )
+  echo "==> Running qcom_hexagon_backend LIT tests"
+  lit "${TRITON_ROOT}/build/cmake.linux-x86_64-cpython-${PYTHON_VERSION}/third_party/qcom_hexagon_backend/test/" --verbose
+else
+  echo "==> SKIPPING Triton/Hexagon backend build:"
+  echo "    Hexagon SDK/Tools/HexKL not available."
+  echo "    Set HEXAGON_SDK_ROOT, HEXAGON_TOOLS, and HEXKL_ROOT (see comments above)"
+  echo "    to enable the full build. Everything else (LLVM/MLIR, host toolchain,"
+  echo "    submodules, Python env) is ready."
+fi
+
+echo "==> Hexagon-MLIR install complete"
