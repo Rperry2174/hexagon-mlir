@@ -27,6 +27,7 @@ from triton.backends.qcom_hexagon_backend.utils import (
     parse_return_types,
     profile_torch_mlir_inputs,
 )
+from triton.backends.qcom_hexagon_backend.pyroscope_phases import profile_phase
 from triton._C.libtriton import qcom_hexagon_backend, ir  # type: ignore
 
 # This file is part of a small subset of python files that uses some type-annotations
@@ -290,15 +291,18 @@ class TorchMLIRHexagonLauncher(HexagonLauncherBase):
 
         start_time = time.time()
         # Compile the mlir bytecode from file `mlir_bytecode_path`
-        wrapper_generator, paths_to_shared_libs_generated = self.compile_torch_mlir(
-            hexec,
-            local_dir_path,
-            mlir_bytecode_path,
-            inputs,
-            func_name,
-            options,
-            iterations,
-        )
+        with profile_phase("compile.torch_mlir_to_so", kernel=func_name):
+            wrapper_generator, paths_to_shared_libs_generated = (
+                self.compile_torch_mlir(
+                    hexec,
+                    local_dir_path,
+                    mlir_bytecode_path,
+                    inputs,
+                    func_name,
+                    options,
+                    iterations,
+                )
+            )
         end_time = time.time()
         print(
             f"Compilation from initial MLIR to .so took {end_time - start_time:.4f} seconds",
@@ -307,13 +311,14 @@ class TorchMLIRHexagonLauncher(HexagonLauncherBase):
 
         func_name_with_ciface = "_mlir_ciface_" + func_name
         # Execute the kernel using the HexagonExecutor `hexec`
-        results = self.execute_kernel(
-            hexec,
-            local_dir_path,
-            func_name_with_ciface,
-            paths_to_shared_libs_generated,
-            wrapper_generator,
-        )
+        with profile_phase("launch.execute", kernel=func_name):
+            results = self.execute_kernel(
+                hexec,
+                local_dir_path,
+                func_name_with_ciface,
+                paths_to_shared_libs_generated,
+                wrapper_generator,
+            )
         return results
 
     @staticmethod

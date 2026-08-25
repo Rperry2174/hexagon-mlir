@@ -27,6 +27,7 @@ from triton.backends.qcom_hexagon_backend.utils import (
     parse_triton_llvm_kernel_signature,
     profile_triton_inputs,
 )
+from triton.backends.qcom_hexagon_backend.pyroscope_phases import profile_phase
 
 # This file is part of a small subset of python files that uses some type-annotations
 # and it passes type-verification with mypy (a type checker).
@@ -695,18 +696,21 @@ class TritonHexagonLauncher(HexagonLauncherBase):
             exec_dir = local_dir_path
 
         # 2 - Generating and writing the wrapper to disk
-        cpp_wrapper_path = self.generate_and_dump_wrapper(
-            wrapper_generator, local_dir_path, func_name, exec_dir
-        )
+        with profile_phase("launch.wrapper_codegen", kernel=func_name):
+            cpp_wrapper_path = self.generate_and_dump_wrapper(
+                wrapper_generator, local_dir_path, func_name, exec_dir
+            )
 
         # 3 - Generate the corresponding shared object for the current object file
-        so_path = hexec.generate_shared_object(cpp_wrapper_path, obj_src_path)
+        with profile_phase("launch.link_shared_object", kernel=func_name):
+            so_path = hexec.generate_shared_object(cpp_wrapper_path, obj_src_path)
         print("==> Shared object generated: ", so_path)
 
         # 4 - Running the shared object located at `so_path`
-        results = super().execute_kernel(
-            hexec, local_dir_path, func_name, [so_path], wrapper_generator
-        )
+        with profile_phase("launch.execute", kernel=func_name):
+            results = super().execute_kernel(
+                hexec, local_dir_path, func_name, [so_path], wrapper_generator
+            )
 
         # In Triton the inputs arguments to a kernel function, can also contain output pointers
         # and essentially each input can be an output as well, so we
