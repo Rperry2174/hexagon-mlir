@@ -37,10 +37,14 @@ Environment variable                    Meaning
                                         name. Defaults to ``hexagon-mlir.tests``.
 ``PYROSCOPE_TENANT_ID``                 Only needed for self-hosted multi-tenant
                                         Pyroscope. Not needed for Grafana Cloud.
+``PYROSCOPE_MEMORY``                    Set to ``1`` to additionally collect
+                                        memory (allocation) profiles alongside
+                                        CPU profiles.
 ======================================  =========================================
 """
 
 import contextlib
+import inspect
 import os
 import re
 import socket
@@ -51,6 +55,7 @@ ENV_USERNAME = "PYROSCOPE_BASIC_AUTH_USERNAME"
 ENV_PASSWORD = "PYROSCOPE_BASIC_AUTH_PASSWORD"
 ENV_APP_NAME = "PYROSCOPE_APPLICATION_NAME"
 ENV_TENANT_ID = "PYROSCOPE_TENANT_ID"
+ENV_MEMORY = "PYROSCOPE_MEMORY"
 
 DEFAULT_APPLICATION_NAME = "hexagon-mlir.tests"
 
@@ -159,6 +164,11 @@ class PyroscopeSession:
         tenant_id = os.environ.get(ENV_TENANT_ID)
         if tenant_id:
             configure_kwargs["tenant_id"] = tenant_id
+        if os.environ.get(ENV_MEMORY, "").lower() in ("1", "true", "yes"):
+            # Memory profiling is only available in newer pyroscope-io
+            # releases; skip the flag (rather than fail) on older ones.
+            if "mem_enabled" in inspect.signature(pyroscope.configure).parameters:
+                configure_kwargs["mem_enabled"] = True
 
         try:
             pyroscope.configure(**configure_kwargs)
