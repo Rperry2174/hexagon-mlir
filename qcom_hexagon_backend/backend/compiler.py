@@ -24,6 +24,7 @@ from triton.backends.qcom_hexagon_backend.utils import parse_return_types
 # Temporary measure to compile .so for HTP without calling the Triton driver
 from triton.backends.qcom_hexagon_backend.hexagon_executor import HexagonExecutor
 from .hexagon_options import HexagonOptions
+from .pyroscope_phases import profile_phase
 
 # This file is part of a small subset of python files that uses some type-annotations
 # and it passes type-verification with mypy (a type checker).
@@ -136,6 +137,21 @@ def obj_to_so(mod, metadata={}) -> str:
     return so_path
 
 
+def _profiled_stage(phase_name, stage_fn):
+    """Wrap a compilation stage with a Pyroscope ``phase`` tag.
+
+    No-op unless the hosting process runs with the Pyroscope agent active
+    (see pyroscope_phases.py); flame graphs can then attribute CPU time to
+    individual pipeline stages (ttir, ttsharedir, obj, ...).
+    """
+
+    def run_stage(src, metadata):
+        with profile_phase(phase_name):
+            return stage_fn(src, metadata)
+
+    return run_stage
+
+
 class HexagonBackend(BaseBackend):
     # TODO: Setting the binary extension of the final executable as .o,
     # to be updated to .so if additional stages are added.
@@ -204,12 +220,19 @@ class HexagonBackend(BaseBackend):
 
     # May need to add num_warps
     def add_stages(self, stages, options, language):
-        stages["ttir"] = lambda src, metadata: self.make_ttir(src, metadata, options)
-        stages["ttsharedir"] = lambda src, metadata: ttir_to_ttsharedir(src, options)
+        stages["ttir"] = _profiled_stage(
+            "compile.ttir",
+            lambda src, metadata: self.make_ttir(src, metadata, options),
+        )
+        stages["ttsharedir"] = _profiled_stage(
+            "compile.ttsharedir",
+            lambda src, metadata: ttir_to_ttsharedir(src, options),
+        )
         if options.htp_kernel_gen:
             if options.target_artifact == "llir":
-                stages["llir"] = lambda src, metadata: ttsharedir_to_llir(
-                    src, options, metadata
+                stages["llir"] = _profiled_stage(
+                    "compile.llir",
+                    lambda src, metadata: ttsharedir_to_llir(src, options, metadata),
                 )
                 # A dummy "o" stage is necessary because Triton requires a stage corresponding to the default binary extention (".o")
                 # There is no hook we can use to change the binary extension after HexagonBackend is instantiated but before
@@ -219,19 +242,25 @@ class HexagonBackend(BaseBackend):
                 # stage as the input of the .o stage, which we explicitly work around to support the torch-mlir workflow.
                 stages["o"] = lambda src, metadata: b"__DUMMY_OBJ_FILE_PLACEHOLDER__"
             elif options.target_artifact == "so":
-                stages["o"] = lambda src, metadata: ttsharedir_to_obj(
-                    src, options, metadata
+                stages["o"] = _profiled_stage(
+                    "compile.obj",
+                    lambda src, metadata: ttsharedir_to_obj(src, options, metadata),
                 )
-                stages["so"] = lambda src, metadata: obj_to_so(src, metadata)
+                stages["so"] = _profiled_stage(
+                    "compile.so",
+                    lambda src, metadata: obj_to_so(src, metadata),
+                )
             else:  # target_artifact == "o"
-                stages["o"] = lambda src, metadata: ttsharedir_to_obj(
-                    src, options, metadata
+                stages["o"] = _profiled_stage(
+                    "compile.obj",
+                    lambda src, metadata: ttsharedir_to_obj(src, options, metadata),
                 )
         else:  # Default compilation pipeline
             assert options.device_type == "hexagon"
 
-            stages["o"] = lambda src, metadata: ttsharedir_to_obj(
-                src, options, metadata
+            stages["o"] = _profiled_stage(
+                "compile.obj",
+                lambda src, metadata: ttsharedir_to_obj(src, options, metadata),
             )
 
     # Skipping those methods below for now

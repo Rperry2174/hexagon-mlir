@@ -13,6 +13,14 @@ jobs:
   build:
     runs-on: self-hosted
 
+    # Grafana Pyroscope continuous profiling (see docs/profiling-pyroscope.md).
+    # Test steps push CPU profiles to Grafana Cloud when these secrets are
+    # configured; when they are absent, profiling is silently disabled and the
+    # build behaves exactly as before.
+    env:
+      PYROSCOPE_SERVER_ADDRESS: ${{ secrets.PYROSCOPE_SERVER_ADDRESS }}
+      PYROSCOPE_BASIC_AUTH_USERNAME: ${{ secrets.PYROSCOPE_BASIC_AUTH_USERNAME }}
+      PYROSCOPE_BASIC_AUTH_PASSWORD: ${{ secrets.PYROSCOPE_BASIC_AUTH_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
