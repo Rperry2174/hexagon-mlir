@@ -64,6 +64,7 @@ python scripts/profile_demo.py
 | `PYROSCOPE_BASIC_AUTH_PASSWORD` | Grafana Cloud access-policy token with `profiles:write`. |
 | `PYROSCOPE_APPLICATION_NAME` | Service name in Grafana. Defaults to `hexagon-mlir.tests`. |
 | `PYROSCOPE_TENANT_ID` | Only for self-hosted multi-tenant Pyroscope. Not needed for Grafana Cloud. |
+| `PYROSCOPE_MEMORY` | Set to `1` to also collect memory (allocation) profiles alongside CPU. |
 
 In CI, `.github/workflows/build.yml` maps the repository secrets of the same
 names into the job environment, so any pytest step profiles automatically
@@ -101,6 +102,8 @@ Pipeline-phase tags (scoped inside the backend, see
 | `launch.execute` | Device/simulator execution (includes `adb`/simulator wait time). |
 
 The `launch.*` phases also carry a `kernel` tag with the kernel function name.
+The demo suite emits its own `demo.parse` / `demo.analyze` / `demo.transform` /
+`demo.emit` phases through the same mechanism.
 
 ## Example workflows in Grafana
 
@@ -117,6 +120,16 @@ select the `hexagon-mlir.tests` service.
 - **Which implementation is hotter?** The demo suite ships two competing
   implementations of the same MLIR op census; compare
   `{test="...op_census[regex]"}` against `{test="...op_census[tokenizer]"}`.
+- **Catch a regression and name the function.** The demo's miniature compiler
+  pipeline runs the same parse → analyze → transform → emit stages with a fast
+  and a deliberately naive SSA-renaming implementation. In the **Diff flame
+  graph** view, set baseline `{test="...test_mini_pipeline[fast]"}` and
+  comparison `{test="...test_mini_pipeline[naive]"}` — the diff highlights
+  `_rename_ssa_naive` as the regression. The same workflow with two `git_sha`
+  values catches real slowdowns between commits.
+- **Where does memory go?** Run with `PYROSCOPE_MEMORY=1` and switch the
+  profile type from `process_cpu` to the memory profile to see allocation
+  flame graphs (e.g. IR text blowup during parsing).
 
 ## Design notes
 
