@@ -38,7 +38,7 @@
 
 #define DEBUG_TYPE "force-hvx-crouton"
 
-#define DBGS() (llvm::errs() << '[' << DEBUG_TYPE << "] ")
+#define DBGS() (llvm::dbgs() << '[' << DEBUG_TYPE << "] ")
 #define DBG(X) LLVM_DEBUG(DBGS() << X << "\n")
 
 using namespace mlir;
