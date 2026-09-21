@@ -28,8 +28,13 @@ jobs:
           # Activate conda
           eval "$(/local/mnt/workspace/MLIR_build_artifacts/miniconda/bin/conda shell.bash hook)"
 
-          # Create or reuse environment
-          conda create -y -n mlir-env python=3.10
+          # Create or reuse environment. The runner is self-hosted and
+          # miniconda persists between builds, so an unconditional
+          # `conda create` fails on every run after the first with
+          # "prefix already exists".
+          if ! conda env list | grep -qE '^mlir-env\s'; then
+            conda create -y -n mlir-env python=3.10
+          fi
           conda activate mlir-env
 
           # Install Python dependencies
@@ -76,14 +81,7 @@ jobs:
           chmod +x ./ci/setup_submodules.sh
           ./ci/setup_submodules.sh
         shell: bash
-      
-      # Read expected LLVM hash from the triton submodule
-      - name: Get Expected LLVM Hash
-        id: llvmhash
-        run: |
-          HASH=$(cat triton/cmake/llvm-hash.txt | tr -d '[:space:]')
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-          
+
       # Run setup script for LLVM
       - name: Setup LLVM for Triton
         run: |
