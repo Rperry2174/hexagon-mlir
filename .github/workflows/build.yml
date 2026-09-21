@@ -44,8 +44,9 @@ jobs:
           python -m pip -V
           python -m pip install --no-user -r ci/requirements.txt
 
-          # Install glibc-compatible libstdcxx
-          conda install -y -c conda-forge libstdcxx-ng=12
+          # Install glibc-compatible libstdcxx, pinning python>=3.10.9 to prevent
+          # conda-forge from superseding CPython with GraalPy (python-3.10.8)
+          conda install -y -c conda-forge libstdcxx-ng=12 'python>=3.10.9'
 
           # Persist environment path
           echo "CONDA_ENV=/local/mnt/workspace/MLIR_build_artifacts/miniconda/envs/mlir-env" >> $GITHUB_ENV
@@ -122,7 +123,6 @@ jobs:
           MINICONDA_ROOT: /local/mnt/workspace/MLIR_build_artifacts/miniconda
           CONDA_ENV_PATH: /local/mnt/workspace/MLIR_build_artifacts/miniconda/envs/mlir-env
           TRITON_BUILD_DIR: triton/build/cmake.linux-x86_64-cpython-3.10
-          GRAALPY_BIN: /local/mnt/workspace/MLIR_build_artifacts/miniconda/envs/mlir-env/lib/jvm/languages/python/bin
           PYTHONNOUSERSITE: "1"
         run: |
           set -ex
@@ -130,9 +130,8 @@ jobs:
           source "$MINICONDA_ROOT/etc/profile.d/conda.sh"
           conda activate "$CONDA_ENV_PATH"
           cd "$TRITON_BUILD_DIR"
-          # Install lit into the active environment so it can be found consistently
-          python -m pip install --no-user --ignore-installed --force-reinstall lit
-          export PATH="$GRAALPY_BIN:$PATH"
+          # Pin lit<23: execute_external=True was removed in lit 23 (LLVM-23)
+          python -m pip install --no-user --ignore-installed --force-reinstall 'lit<23'
           lit test
         shell: bash
 
@@ -142,13 +141,11 @@ jobs:
           CONDA_ENV_PATH: /local/mnt/workspace/MLIR_build_artifacts/miniconda/envs/mlir-env
           BACKEND_BUILD_DIR: triton/build/cmake.linux-x86_64-cpython-3.10/third_party/qcom_hexagon_backend
           HEXAGON_ARCH_VERSION: "75"
-          GRAALPY_BIN: /local/mnt/workspace/MLIR_build_artifacts/miniconda/envs/mlir-env/lib/jvm/languages/python/bin
         run: |
           set -ex
           pwd
           source "$MINICONDA_ROOT/etc/profile.d/conda.sh"
           conda activate "$CONDA_ENV_PATH"
-          export PATH="$GRAALPY_BIN:$PATH"
           cd "$BACKEND_BUILD_DIR"
           lit test --verbose
         shell: bash
