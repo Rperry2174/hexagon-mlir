@@ -80,6 +80,9 @@ class HexagonOptions:
     enableHVXInlining: bool = False
     enableSCFLoopUnroll: bool = False
     enableConversionToFp16: bool = False
+    # Run ForceHVXCrouton (and the HexagonExtendPack that follows it) on fp16
+    # 4D tensor patterns. Off by default; croutonization is opt-in.
+    forceHVXCroutonization: bool = False
 
     # This option enables 'seeding' of layout conversion ops around conv2d ops.
     # This introduces some builtin.unrealized_conversion_cast ops, that are expected

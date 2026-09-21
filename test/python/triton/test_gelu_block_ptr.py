@@ -72,4 +72,5 @@ def test_gelu_bptr():
         H,
         W,
         C,
+        forceHVXCroutonization=True,
     )

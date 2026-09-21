@@ -108,6 +108,10 @@ void setLinalgToLLVMOptions(
       !arch_kwargs.at("enableSCFLoopUnroll").compare(TRUE);
   options.enableConversionToFp16 =
       !arch_kwargs.at("enableConversionToFp16").compare(TRUE);
+  // Looked up leniently so kernels cached before this flag existed still load.
+  auto croutonIt = arch_kwargs.find("forceHVXCroutonization");
+  options.forceHVXCroutonization =
+      croutonIt != arch_kwargs.end() && !croutonIt->second.compare(TRUE);
 }
 
 namespace mlir {
