@@ -31,12 +31,7 @@ class Gelu(nn.Module):
         return x
 
 
-@pytest.mark.parametrize(
-    "enablelwp, enableetm",
-    [
-        (False, False)
-    ],
-)
+@pytest.mark.parametrize("enablelwp, enableetm", [(True, False)])
 def test_gelu_torch(enablelwp, enableetm):
     model = Gelu()
     inp = torch.rand(128, 128, dtype=torch.float16)
