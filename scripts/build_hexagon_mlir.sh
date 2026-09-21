@@ -134,8 +134,11 @@ fi
 cd ${LLVM_SRC_DIR}
 
 # Pin to a specific commit for reproducibility
-LLVM_SHA=$(cat $TRITON_DIR/cmake/llvm-hash.txt)
-git checkout $LLVM_SHA
+LLVM_SHA=$(tr -d '[:space:]' < "$TRITON_DIR/cmake/llvm-hash.txt")
+# An llvm-project clone from a previous run predates newer pins, so fetch
+# before checking out. ci/setup_llvm.sh already does this.
+git fetch origin
+git checkout "$LLVM_SHA"
 
 
 if [[ ! -f "${LLVM_PROJECT_BUILD_DIR}/bin/mlir-opt" ]]; then

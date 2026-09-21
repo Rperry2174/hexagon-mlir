@@ -5,7 +5,9 @@
 # For more license information:
 #   https://github.com/qualcomm/hexagon-mlir/LICENSE.txt
 #
-set -x
+# Sourced by ci/build_triton.sh and scripts/build_triton.sh. It deliberately
+# does not touch shell options: the trailing `set +x` it used to carry turned
+# off the caller's tracing for the rest of the build.
 
 HEXAGON_MLIR_ROOT="$(git rev-parse --show-toplevel)"
 export HEXAGON_MLIR_ROOT
@@ -35,4 +37,3 @@ export PYTHONPATH=$TRITON_ROOT/python${PYTHONPATH:+:$PYTHONPATH}
 # Add host toolchain to PATH
 export PATH="${HOST_TOOLCHAIN:+${HOST_TOOLCHAIN}/bin:}${PATH}"
 
-set +x
