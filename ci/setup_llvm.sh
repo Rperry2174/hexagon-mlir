@@ -79,7 +79,7 @@ cmake -G "Ninja" ../llvm-project/llvm \
     -DCMAKE_INSTALL_PREFIX="${BUILD_DIR}/install"
 
 echo "Building LLVM..."
-ninja -j$(nproc)
+ninja -j"$(nproc)"
 
 echo "Installing LLVM..."
 ninja install

@@ -8,9 +8,30 @@
 # ===------------------------------------------------------------------------===
 
 import os
+import warnings
 from dataclasses import dataclass
 from typing import Tuple
 import hashlib
+
+# Every entry point that sets up the build environment (ci/setup_triton_env.sh,
+# scripts/set_local_env.sh, the build workflow) exports this as 75. Importing
+# the module without it used to yield the malformed feature string
+# "+hvxvNone,+hvx-length128b", which only failed much later inside LLVM.
+DEFAULT_HEXAGON_ARCH_VERSION = "75"
+
+
+def _arch_version() -> str:
+    version = os.getenv("HEXAGON_ARCH_VERSION")
+    if version:
+        return version
+    warnings.warn(
+        "HEXAGON_ARCH_VERSION is not set; defaulting to "
+        f"v{DEFAULT_HEXAGON_ARCH_VERSION}. Source ci/setup_triton_env.sh or "
+        "scripts/set_local_env.sh to select a target explicitly.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    return DEFAULT_HEXAGON_ARCH_VERSION
 
 
 @dataclass(frozen=True)
@@ -18,7 +39,7 @@ class HexagonOptions:
     allow_fp8e4nv: bool = False
     allowed_dot_input_precisions: Tuple[str] = ("ieee",)
     arch_triple: str = "hexagon"
-    arch_features: str = f'+hvxv{os.getenv("HEXAGON_ARCH_VERSION")},+hvx-length128b'
+    arch_features: str = f"+hvxv{_arch_version()},+hvx-length128b"
     device_type: str = "hexagon"
     vectorize: int = 1
     vector_length: int = 32
@@ -80,6 +101,9 @@ class HexagonOptions:
     enableHVXInlining: bool = False
     enableSCFLoopUnroll: bool = False
     enableConversionToFp16: bool = False
+    # Run ForceHVXCrouton (and the HexagonExtendPack that follows it) on fp16
+    # 4D tensor patterns. Off by default; croutonization is opt-in.
+    forceHVXCroutonization: bool = False
 
     # This option enables 'seeding' of layout conversion ops around conv2d ops.
     # This introduces some builtin.unrealized_conversion_cast ops, that are expected

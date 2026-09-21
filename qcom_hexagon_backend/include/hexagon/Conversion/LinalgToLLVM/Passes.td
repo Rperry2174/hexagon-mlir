@@ -156,7 +156,10 @@ def LinalgToLLVM : Pass<"linalg-to-llvm", "mlir::ModuleOp"> {
           "Enable aggressive inlining after linking runtime modules">,
     Option<"enableSCFLoopUnroll", "enable-scf-loop-unroll", "bool",
           /*default=*/"false",
-          "Enable SCF loop unrolling optimization">
+          "Enable SCF loop unrolling optimization">,
+    Option<"forceHVXCroutonization", "force-hvx-croutonization", "bool",
+          /*default=*/"false",
+          "Force HVX croutonization pass">
    ];
 }
 
@@ -194,7 +197,7 @@ def FormVirtualThreads : Pass<"form-virtual-threads", "func::FuncOp"> {
 
 def HexmemCpyToDMA :
     InterfacePass<"hexmem-cpy-to-dma", "mlir::FunctionOpInterface"> {
-  let summary = "Pass to rewrite some hexagonmem.copy ops to memref.dma ops";
+  let summary = "Pass to rewrite hexagonmem.copy and memref.copy ops to memref.dma ops";
 
   let constructor =
        "hexagon::createHexmemCpyToDMAPass()";
@@ -306,7 +309,7 @@ def LowerPack : Pass<"lower-pack", "func::FuncOp"> {
 }
 
 def LowerConstantsSeparately : Pass<"lower-constants-separately", "mlir::ModuleOp"> {
-  let summary = "Lowers constants separately from the code, possibly in multiple modules if above a certain threshold"; 
+  let summary = "Lowers constants separately from the code, possibly in multiple modules if above a certain threshold";
   let constructor = "hexagon::createLowerConstantsSeparatelyPass()";
 }
 

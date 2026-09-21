@@ -38,10 +38,25 @@ def check_clang_format():
         return False
 
 
+def check_clang_format_config(root_dir):
+    """Confirm the repository's .clang-format is the one that will be used.
+
+    Without it clang-format falls back to its built-in default, or to a
+    .clang-format found anywhere above the checkout, and this script would
+    happily rewrite the tree in someone else's style.
+    """
+    config = os.path.join(root_dir, ".clang-format")
+    if not os.path.isfile(config):
+        logging.error(f"No .clang-format found at {config}.")
+        return False
+    logging.info(f"Using style from {config}.")
+    return True
+
+
 def check_file_needs_formatting(file_path):
     try:
         result = subprocess.run(
-            ["clang-format", "--dry-run", "-Werror", file_path],
+            ["clang-format", "--style=file", "--dry-run", "-Werror", file_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -73,7 +88,9 @@ def find_files_to_format(root_dir):
 def format_files(files, add_to_git=False):
     for file_path in files:
         try:
-            subprocess.run(["clang-format", "-i", file_path], check=True)
+            subprocess.run(
+                ["clang-format", "--style=file", "-i", file_path], check=True
+            )
             logging.info(f"Formatted file: {file_path}")
             # Optionally, add the formatted file to git
             if add_to_git:
@@ -89,6 +106,9 @@ def main():
     hexagon_mlir_root = os.getenv("HEXAGON_MLIR_ROOT")
     if not hexagon_mlir_root:
         logging.error("Environment variable HEXAGON_MLIR_ROOT is not set.")
+        sys.exit(1)
+
+    if not check_clang_format_config(hexagon_mlir_root):
         sys.exit(1)
 
     # There might be a --add-to-git flag to add formatted files to git

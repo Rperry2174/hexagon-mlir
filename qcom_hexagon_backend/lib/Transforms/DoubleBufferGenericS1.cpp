@@ -344,7 +344,7 @@ bool generateSchedule(IRRewriter &rewriter, scf::ForOp forOp,
     default:
       return false;
     } // switch
-  }   // for
+  } // for
   return false;
 }
 

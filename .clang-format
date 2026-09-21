@@ -1,0 +1,7 @@
+# The backend follows LLVM/MLIR house style; 186 of the 189 C++ sources under
+# qcom_hexagon_backend/ already conform. Declaring it here keeps
+# qcom_hexagon_backend/utils/clang-format.py and editor integrations
+# deterministic instead of relying on clang-format's built-in default, which a
+# .clang-format anywhere above the checkout would silently override.
+Language: Cpp
+BasedOnStyle: LLVM

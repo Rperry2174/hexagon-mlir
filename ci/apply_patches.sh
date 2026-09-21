@@ -1,4 +1,10 @@
 #!/bin/bash
+#
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause.
+# For more license information:
+#   https://github.com/qualcomm/hexagon-mlir/LICENSE.txt
+#
 set -Eeuox pipefail
 
 # If the CI image accidentally has /etc/gitconfig as a *directory*, Git will fail
@@ -11,16 +17,24 @@ fi
 SCRIPT_DIR="$(readlink -f "$(dirname "$0")")"
 HEXAGON_MLIR_ROOT="$(readlink -f "$SCRIPT_DIR/../")"
 TRITON_ROOT="$HEXAGON_MLIR_ROOT/triton"
+PATCH_DIR="$HEXAGON_MLIR_ROOT/third_party_software/patches"
+
+# Every patch this script applies, so the drift check below can compare the
+# list against what is actually on disk.
+APPLIED_PATCHES=()
 
 # Apply a patch if it isn't already applied (stateless; no marker file).
 apply_patch_if_needed() {
     local repo_dir="$1"   # e.g., "$TRITON_ROOT" or "$HEXAGON_MLIR_ROOT/triton_shared"
-    local patch_file="$2" # e.g., ".../patches/triton/third_party_triton.patch"
+    local patch_file="$2" # e.g., "$PATCH_DIR/triton_shared/triton_shared_split_dim.patch"
 
+    # A missing patch must be fatal. Skipping it leaves the dependency
+    # unpatched and turns a typo here into a confusing compile error later.
     if [ ! -f "$patch_file" ]; then
-        echo "WARNING: Patch file not found at $patch_file"
-        return 0
+        echo "ERROR: Patch file not found at $patch_file"
+        exit 1
     fi
+    APPLIED_PATCHES+=("$patch_file")
 
     echo "Checking/applying patch: $patch_file in $repo_dir"
     pushd "$repo_dir" >/dev/null
@@ -57,28 +71,52 @@ apply_patch_if_needed() {
 # triton_shared patches
 # -----------------------------------------------------------------------------
 # Triton shared patch to update the API for compatibility with the latest LLVM
-TRITON_SHARED_API_UPDATE_PATCH_FILE="$HEXAGON_MLIR_ROOT/third_party_software/patches/triton_shared/triton_shared_3_6_triton.patch"
+TRITON_SHARED_API_UPDATE_PATCH_FILE="$PATCH_DIR/triton_shared/triton_shared_3_6_triton.patch"
 apply_patch_if_needed "$HEXAGON_MLIR_ROOT/triton_shared" "$TRITON_SHARED_API_UPDATE_PATCH_FILE"
 
 # Triton shared patch on Pointer Analysis
-TRITON_SHARED_POINTER_ANALYSIS_PATCH_FILE="$HEXAGON_MLIR_ROOT/third_party_software/patches/triton_shared/triton_shared_ptr_analysis.patch"
+TRITON_SHARED_POINTER_ANALYSIS_PATCH_FILE="$PATCH_DIR/triton_shared/triton_shared_ptr_analysis.patch"
 apply_patch_if_needed "$HEXAGON_MLIR_ROOT/triton_shared" "$TRITON_SHARED_POINTER_ANALYSIS_PATCH_FILE"
 
 # Triton shared patch on split pointers
-TRITON_SHARED_SPLIT_DIM_PATCH_FILE="$HEXAGON_MLIR_ROOT/third_party_software/patches/triton_shared/triton_shared_split_dim.patch"
+TRITON_SHARED_SPLIT_DIM_PATCH_FILE="$PATCH_DIR/triton_shared/triton_shared_split_dim.patch"
 apply_patch_if_needed "$HEXAGON_MLIR_ROOT/triton_shared" "$TRITON_SHARED_SPLIT_DIM_PATCH_FILE"
 
 # Triton shared patch to handle canonicalization pattern of Max with NaN propagation
-TRITON_SHARED_MAX_NAN_PATCH_FILE="$HEXAGON_MLIR_ROOT/third_party_software/patches/triton_shared/triton_shared_max_nan.patch"
+TRITON_SHARED_MAX_NAN_PATCH_FILE="$PATCH_DIR/triton_shared/triton_shared_max_nan.patch"
 apply_patch_if_needed "$HEXAGON_MLIR_ROOT/triton_shared" "$TRITON_SHARED_MAX_NAN_PATCH_FILE"
 
 # -----------------------------------------------------------------------------
 # Triton patches (build third-party backends + NVVM ReductionKind compatibility)
 # -----------------------------------------------------------------------------
 # Triton patch to get around NVVM ReductionKind compatibility issue
-TRITON_NVVM_COMPATIBILITY_PATCH_FILE="$HEXAGON_MLIR_ROOT/third_party_software/patches/triton/nvvm_reduction_kind_compatibility.patch"
+TRITON_NVVM_COMPATIBILITY_PATCH_FILE="$PATCH_DIR/triton/nvvm_reduction_kind_compatibility.patch"
 apply_patch_if_needed "$TRITON_ROOT" "$TRITON_NVVM_COMPATIBILITY_PATCH_FILE"
 
 # Add libdevice sigmoid support to triton
-TRITON_LIBDEVICE_SIGMOID_PATCH_FILE="$HEXAGON_MLIR_ROOT/third_party_software/patches/triton/libdevice_sigmoid.patch"
+TRITON_LIBDEVICE_SIGMOID_PATCH_FILE="$PATCH_DIR/triton/libdevice_sigmoid.patch"
 apply_patch_if_needed "$TRITON_ROOT" "$TRITON_LIBDEVICE_SIGMOID_PATCH_FILE"
+
+# -----------------------------------------------------------------------------
+# Drift check
+# -----------------------------------------------------------------------------
+# Catch patches that were added to third_party_software/patches but never wired
+# in here, and patches that were superseded but left behind. Either way the tree
+# ends up with a patch nobody applies, which is how stale ones accumulate.
+UNAPPLIED=()
+while IFS= read -r on_disk; do
+    found=0
+    for applied in "${APPLIED_PATCHES[@]}"; do
+        [ "$applied" = "$on_disk" ] && { found=1; break; }
+    done
+    [ "$found" -eq 0 ] && UNAPPLIED+=("$on_disk")
+done < <(find "$PATCH_DIR" -type f -name '*.patch' | sort)
+
+if [ ${#UNAPPLIED[@]} -ne 0 ]; then
+    echo "ERROR: patches present in $PATCH_DIR but never applied by this script:"
+    printf '  %s\n' "${UNAPPLIED[@]}"
+    echo "Wire them in above, or delete them if they are superseded."
+    exit 1
+fi
+
+echo "All ${#APPLIED_PATCHES[@]} patches in $PATCH_DIR applied."

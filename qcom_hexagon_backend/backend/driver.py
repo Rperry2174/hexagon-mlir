@@ -55,6 +55,7 @@ def getHexagonLauncherClass(device_type="dsp"):
             compiled_enable_threaded_dispatch = (
                 pack_metadata[11] if len(pack_metadata) > 11 else None
             )
+            compiled_enable_lwp = pack_metadata[12] if len(pack_metadata) > 12 else None
             num_fixed_args = 9
             inputs_with_constants = list(args[num_fixed_args:])
             inputs = [
@@ -64,13 +65,11 @@ def getHexagonLauncherClass(device_type="dsp"):
             ]
             launch_grid = (args[0], args[1], args[2])
             if prod(launch_grid) < 1:
-                raise ValueError(
-                    """
+                raise ValueError("""
                     Must set at least 1 thread in SPMD launch grid.
                     To launch singlethreaded, invoke kernel as follows:
                     your_kernel[(1,)](...)
-                    """
-                )
+                    """)
             self.launcher._exec_kernel(
                 kernel_llir,
                 iterations,
@@ -81,6 +80,7 @@ def getHexagonLauncherClass(device_type="dsp"):
                 compiled_scratch=compiled_scratch,
                 compiled_enable_multithreading=compiled_enable_multithreading,
                 compiled_enable_threaded_dispatch=compiled_enable_threaded_dispatch,
+                compiled_enable_lwp=compiled_enable_lwp,
                 runtime_options=kwargs,
             )
             # TODO: There seems to be no way to propogate the call returns upward, because

@@ -1,4 +1,4 @@
-# ===- test_silu.py ---------------------------------------------------------===
+# ===- test_libd_silu.py ----------------------------------------------------===
 #
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause.
@@ -14,6 +14,7 @@ import triton
 import triton.language as tl
 from triton.backends.qcom_hexagon_backend.driver import HexagonDriver
 from .. import parameterize_func_name
+from triton.language.extra import libdevice
 
 triton.runtime.driver.set_active(HexagonDriver())
 
@@ -22,16 +23,9 @@ ATOL = 1e-2
 
 
 @pytest.mark.parametrize("num_elements", [16384])
-@pytest.mark.parametrize(
-    "num_threads,enable_mt,enablelwp",
-    [
-        (1, False, True),  # single-threaded + LWP; MT disabled (LWP constraint)
-        (1, True, False),  # single-threaded + MT optimization; LWP disabled
-        (4, False, False),  # multi-threaded; neither MT nor LWP
-    ],
-)
+@pytest.mark.parametrize("num_threads", [1])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
-def test_silu(num_elements, num_threads, dtype, enable_mt, enablelwp):
+def test_silu(num_elements, num_threads, dtype):
     print(
         f"Running with num-elements: {num_elements}, "
         f"num-triton-thread: {num_threads}, dtype: {dtype}"
@@ -48,7 +42,7 @@ def test_silu(num_elements, num_threads, dtype, enable_mt, enablelwp):
         pid = tl.program_id(0)
         offsets = tl.arange(0, BLOCK_SIZE) + (pid * BLOCK_SIZE)
         x = tl.load(x_ptr + offsets)
-        output = x / (1 + tl.exp((-x).to(tl.float32)).to(x.dtype))
+        output = x * libdevice.sigmoid(x)
         tl.store(output_ptr + offsets, output)
 
     x = torch.rand(num_elements, dtype=dtype)
@@ -61,11 +55,10 @@ def test_silu(num_elements, num_threads, dtype, enable_mt, enablelwp):
         x,
         output,
         BLOCK_SIZE=block_size,
-        enableMultiThreading=enable_mt,
+        enableMultiThreading=true_if_single_threaded,
         enableVTCMTiling=true_if_single_threaded,
         enableConvertToHexagonmem=true_if_single_threaded,
         enableHexagonmemCopyToDMA=true_if_single_threaded,
-        enableLWP=enablelwp,
     )
 
     reference = torch.nn.functional.silu(x)

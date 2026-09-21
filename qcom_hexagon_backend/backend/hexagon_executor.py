@@ -408,7 +408,9 @@ class HexagonExecutor:
             f"{self.device_path}/{os.path.basename(fname)}" for fname in output_paths
         ]
 
-        lwp_device_path = f"{self.device_path}/lwp.json"
+        # WriteLWPOutput() in all wrappers writes to /data/local/tmp/lwp.json;
+        # pull from that fixed path regardless of where kernel artifacts live.
+        lwp_device_path = "/data/local/tmp/lwp.json"
         lwp_local_path = os.path.join(local_dir, "lwp.json")
 
         etm_local_dir = os.path.join(local_dir, "etm_pyetm")
@@ -540,7 +542,7 @@ class HexagonExecutor:
             ),
             # Run the kernel using run_main_on_hexagon
             (
-                "adb {} -s {} shell 'cd {}; touch /vendor/lib/rfsa/adsp/run_main_on_hexagon.farf; export ADSP_LIBRARY_PATH={}:/vendor/lib/rfsa/adsp/ ; ./run_main_on_hexagon 3 {}'".format(
+                "adb {} -s {} shell 'cd {}; touch /vendor/lib/rfsa/adsp/run_main_on_hexagon.farf; export ADSP_LIBRARY_PATH=\"{};/vendor/lib/rfsa/adsp/\" ; ./run_main_on_hexagon 3 {}'".format(
                     self.config.env_vars["ANDROID_HOST"],
                     self.config.env_vars["ANDROID_SERIAL"],
                     self.device_path,
@@ -576,7 +578,7 @@ class HexagonExecutor:
             (
                 "adb {} -s {} pull {} {} && "
                 "cp {} /tmp/lwp.json && "
-                "cp {}/*.mlirbc /tmp/initial-linalg.mlir || echo 'No MLIRBC files to copy' ".format(
+                "(cp {}/*.mlirbc /tmp/initial-linalg.mlir || echo 'No MLIRBC files to copy')".format(
                     self.config.env_vars["ANDROID_HOST"],
                     self.config.env_vars["ANDROID_SERIAL"],
                     lwp_device_path,
@@ -722,8 +724,7 @@ class HexagonExecutor:
                     self.config.env_vars["HEXAGON_TOOLS"], SIM_Q6SS_PATH
                 )
             ),
-            (
-                "{} -mv{} \
+            ("{} -mv{} \
                 --usefs={}/../Tools/target/hexagon/lib/v{}/G0/pic \
                 --simulated_returnval \
                 --cosim_file {} \
@@ -732,8 +733,7 @@ class HexagonExecutor:
                 {}/rtos/qurt/computev{}/sdksim_bin/runelf.pbn -- \
                 {}/libs/run_main_on_hexagon/ship/hexagon_toolv87_v{}/run_main_on_hexagon_sim \
                 stack_size=0x400000 -- \
-                {}"
-            ).format(
+                {}").format(
                 self.config.HEX_TOOLS["hexagon-sim"],
                 self.config.Q6_VERSION,
                 self.config.env_vars["HEXAGON_TOOLS"],
