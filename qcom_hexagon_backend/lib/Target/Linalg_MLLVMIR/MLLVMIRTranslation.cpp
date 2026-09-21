@@ -92,6 +92,7 @@ void setLinalgToLLVMOptions(
   options.convTileSizes = arch_kwargs.at("convTileSizes");
   options.enableLWP = !arch_kwargs.at("enableLWP").compare(TRUE);
   options.disableLWPLoop = !arch_kwargs.at("disableLWPLoop").compare(TRUE);
+  options.LWPloopDepth = std::stoi(arch_kwargs.at("LWPloopDepth"));
   options.enableVectorization =
       !arch_kwargs.at("enableVectorization").compare(TRUE);
   options.enableSplitReduceGeneric =
