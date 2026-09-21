@@ -57,8 +57,10 @@ template <typename CopyOpTy> static bool isValidCandidate(CopyOpTy op) {
   auto sourceMemRefType = dyn_cast<MemRefType>(sourceType);
   auto targetMemRefType = dyn_cast<MemRefType>(targetType);
 
-  assert(sourceMemRefType && targetMemRefType &&
-         "Expected Memref type as source and target to copy op");
+  // memref.copy also accepts unranked memrefs, which have no shape or strides
+  // to build a DMA descriptor from.
+  if (!sourceMemRefType || !targetMemRefType)
+    return false;
 
   // Skip lowering for non-static
   if (!sourceMemRefType.hasStaticShape() || !targetMemRefType.hasStaticShape())

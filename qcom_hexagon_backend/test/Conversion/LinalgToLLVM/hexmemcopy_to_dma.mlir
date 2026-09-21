@@ -51,6 +51,18 @@ func.func @memref_copy_same_memspace(%arg0: memref<256x256xf32>, %arg1: memref<2
   return
 }
 
+// Test unranked memref.copy is skipped instead of tripping an assertion
+// CHECK1-LABEL: func.func @memref_copy_unranked
+// CHECK1-NOT: memref.dma_start
+// CHECK1-NOT: memref.dma_wait
+// CHECK1: memref.copy
+// CHECK1: return
+
+func.func @memref_copy_unranked(%arg0: memref<*xf32>, %arg1: memref<*xf32, 1>) {
+  memref.copy %arg0, %arg1 : memref<*xf32> to memref<*xf32, 1>
+  return
+}
+
 // Tests to ensure that non-contiguous copies to/from same memspace are not replaced with DMA calls and instead gets lowered to `memrefCopy`;
 // CHECK2-LABEL: llvm.func @subview
 // CHECK2-NOT: memref.dma_start

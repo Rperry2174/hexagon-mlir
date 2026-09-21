@@ -20,6 +20,8 @@ triton.runtime.driver.set_active(HexagonDriver())
 
 N, H, W, C = 16, 16, 128, 2
 
+ATOL_FP16 = 1e-2
+
 
 @triton.jit
 def tanh(x):
@@ -74,3 +76,6 @@ def test_gelu_bptr():
         C,
         forceHVXCroutonization=True,
     )
+
+    reference = torch.nn.functional.gelu(x, approximate="tanh")
+    assert torch.allclose(output, reference, atol=ATOL_FP16)
