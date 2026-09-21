@@ -65,13 +65,11 @@ def getHexagonLauncherClass(device_type="dsp"):
             ]
             launch_grid = (args[0], args[1], args[2])
             if prod(launch_grid) < 1:
-                raise ValueError(
-                    """
+                raise ValueError("""
                     Must set at least 1 thread in SPMD launch grid.
                     To launch singlethreaded, invoke kernel as follows:
                     your_kernel[(1,)](...)
-                    """
-                )
+                    """)
             self.launcher._exec_kernel(
                 kernel_llir,
                 iterations,
