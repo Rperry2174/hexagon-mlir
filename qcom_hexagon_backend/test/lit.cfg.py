@@ -51,13 +51,17 @@ tool_dirs = [config.triton_tools_dir, config.llvm_tools_dir, config.filecheck_di
 for d in tool_dirs:
     llvm_config.with_environment("PATH", d, append_path=True)
 tools = [
+    # linalg-hexagon-opt drives almost every test in this suite. Listing it
+    # here makes a missing binary fail once, at configuration time, instead of
+    # once per test with "command not found".
+    "linalg-hexagon-opt",
     "linalg-hexagon-translate",
     ToolSubst("%PYTHON", config.python_executable, unresolved="ignore"),
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
-# TODO: what's this?
+# The backend is imported from the Triton python package built alongside it.
 llvm_config.with_environment(
     "PYTHONPATH",
     [
@@ -66,5 +70,11 @@ llvm_config.with_environment(
     append_path=True,
 )
 
-# Pass external env flags to lit test config
-config.environment["HEXAGON_ARCH_VERSION"] = os.environ.get("HEXAGON_ARCH_VERSION")
+# Pass external env flags to lit test config. os.environ.get() returns None
+# when unset, and a None in config.environment makes lit raise
+# "TypeError: expected str, bytes or os.PathLike object, not NoneType" when it
+# builds the subprocess environment, so the whole run dies rather than any
+# single test failing.
+config.environment["HEXAGON_ARCH_VERSION"] = os.environ.get(
+    "HEXAGON_ARCH_VERSION", "75"
+)
