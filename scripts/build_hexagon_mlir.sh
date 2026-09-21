@@ -14,7 +14,10 @@ echo "----------------------------------------------------"
 
 REPO_DIR="$(git rev-parse --show-toplevel)"
 echo "REPO_DIR=${REPO_DIR}"
-BASE_DIR="$(cd .. && pwd)"
+# Toolchains, the SDK and LLVM are downloaded next to the repo, not next to
+# whatever directory the script happened to be invoked from. Honour an
+# externally provided BASE_DIR so callers can redirect those large downloads.
+BASE_DIR="${BASE_DIR:-$(cd "${REPO_DIR}/.." && pwd)}"
 echo "BASE_DIR=${BASE_DIR}"
 
 # get triton and triton-shared
@@ -109,9 +112,6 @@ else
   echo "Hexagon_KL already extracted. Skipping."
 fi
 export HEXKL_ROOT=${BASE_DIR}/HEXKL_DIR/hexkl_addon
-
-# check BASE_DIR is pre-defined in the environment
-: "${BASE_DIR:?Please set BASE_DIR before running this script}"
 
 # Derived paths
 echo "Clone and build LLVM..."

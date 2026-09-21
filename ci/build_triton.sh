@@ -6,7 +6,8 @@
 #   https://github.com/qualcomm/hexagon-mlir/LICENSE.txt
 #
 set -x
-export HEXAGON_MLIR_ROOT=$PWD
+HEXAGON_MLIR_ROOT="$(git rev-parse --show-toplevel)"
+export HEXAGON_MLIR_ROOT
 export TRITON_ROOT=$HEXAGON_MLIR_ROOT/triton
 export LLVM_INSTALL_DIR=$LLVM_PROJECT_BUILD_DIR/install
 

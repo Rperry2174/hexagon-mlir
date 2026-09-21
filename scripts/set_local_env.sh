@@ -8,9 +8,13 @@
 set -euo pipefail
 set -x
 
-export HEXAGON_MLIR_ROOT=$PWD
-export TRITON_ROOT=$PWD/triton
-BASE_DIR="$(cd .. && pwd)"
+# This file is meant to be sourced, so locate the repo from the script's own
+# path rather than $PWD -- sourcing it from anywhere but the repo root used to
+# point every path below at the wrong tree.
+HEXAGON_MLIR_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export HEXAGON_MLIR_ROOT
+export TRITON_ROOT=$HEXAGON_MLIR_ROOT/triton
+BASE_DIR="$(cd "$HEXAGON_MLIR_ROOT/.." && pwd)"
 
 # Get the Python version
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")

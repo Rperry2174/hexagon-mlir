@@ -7,8 +7,9 @@
 #
 set -x
 
-export HEXAGON_MLIR_ROOT=$PWD
-export TRITON_ROOT=$PWD/triton
+HEXAGON_MLIR_ROOT="$(git rev-parse --show-toplevel)"
+export HEXAGON_MLIR_ROOT
+export TRITON_ROOT=$HEXAGON_MLIR_ROOT/triton
 
 # Get the Python version
 PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
