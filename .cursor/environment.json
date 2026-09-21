@@ -1,0 +1,5 @@
+{
+  "name": "Hexagon-MLIR",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh"
+}
