@@ -17,16 +17,22 @@ PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.v
 # Triton shared path
 export TRITON_SHARED_OPT_PATH=$TRITON_ROOT/build/cmake.linux-x86_64-cpython-${PYTHON_VERSION}/third_party/triton_shared/tools/triton-shared-opt/triton-shared-opt
 
-export HEXAGON_SDK_ROOT=${HEXAGON_SDK_ROOT}
-export HEXAGON_TOOLS=${HEXAGON_TOOLS}
-export HEXKL_ROOT=${HEXKL_ROOT}
+# Provided by the caller (the "Install Tools and Dependencies" workflow step,
+# or scripts/build_hexagon_mlir.sh locally). Re-exporting them unchecked used to
+# turn an unset value into an empty path and fail deep inside the build.
+: "${HEXAGON_SDK_ROOT:?set HEXAGON_SDK_ROOT to the Hexagon SDK (see ci/setup_tools.sh)}"
+: "${HEXAGON_TOOLS:?set HEXAGON_TOOLS to the Hexagon tools directory (see ci/setup_tools.sh)}"
+: "${HEXKL_ROOT:?set HEXKL_ROOT to the Hexagon KL addon (see ci/setup_tools.sh)}"
+export HEXAGON_SDK_ROOT HEXAGON_TOOLS HEXKL_ROOT
 export HEXAGON_ARCH_VERSION=75
 export TRITON_HOME=$HEXAGON_MLIR_ROOT
 export TRITON_PLUGIN_DIRS="$HEXAGON_MLIR_ROOT/triton_shared;$HEXAGON_MLIR_ROOT/qcom_hexagon_backend"
 export PATH=$TRITON_ROOT/build/cmake.linux-x86_64-cpython-${PYTHON_VERSION}/third_party/qcom_hexagon_backend/bin/:$TRITON_ROOT/build/cmake.linux-x86_64-cpython-${PYTHON_VERSION}/third_party/triton_shared/tools/triton-shared-opt:$PATH
-export PYTHONPATH=$TRITON_ROOT/python:$PYTHONPATH
+# Guard the expansion: with PYTHONPATH unset this produced a trailing ':',
+# which python reads as "also import from the current directory".
+export PYTHONPATH=$TRITON_ROOT/python${PYTHONPATH:+:$PYTHONPATH}
 
 # Add host toolchain to PATH
-export PATH="${HOST_TOOLCHAIN}/bin:${PATH}"
+export PATH="${HOST_TOOLCHAIN:+${HOST_TOOLCHAIN}/bin:}${PATH}"
 
 set +x
