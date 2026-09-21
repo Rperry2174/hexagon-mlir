@@ -12,17 +12,29 @@ SDK_VERSION="6.4.0.2"
 SDK_ZIP="Hexagon_SDK_lnx.zip"
 SDK_URL="https://softwarecenter.qualcomm.com/api/download/software/sdks/Hexagon_SDK/Linux/Debian/${SDK_VERSION}/${SDK_ZIP}"
 
-# Install directory
-INSTALL_DIR="/local/mnt/workspace/MLIR_build_artifacts"
+# Install directory (override with MLIR_ARTIFACTS_DIR; default preserves CI path)
+INSTALL_DIR="${MLIR_ARTIFACTS_DIR:-/local/mnt/workspace/MLIR_build_artifacts}"
 SDK_DIR="${INSTALL_DIR}/Hexagon_SDK/${SDK_VERSION}"
 
 mkdir -p "${INSTALL_DIR}"
 
+# Resilient, low-noise downloader. `wget -q --show-progress` streams a dot/percent
+# progress bar to stderr that floods (and truncates) CI/build logs, and with no
+# retry a single transient reset on these ~1 GB downloads aborts the whole
+# install. Use non-verbose output with retries + resume so a network blip does
+# not fail setup and the logs stay readable.
+download() {
+  local url="$1" out="$2"
+  wget --no-verbose --continue --tries=5 --timeout=60 --waitretry=10 "${url}" -O "${out}"
+}
+
 echo "Downloading Hexagon SDK version ${SDK_VERSION}..."
-wget -q --show-progress "${SDK_URL}" -O "${INSTALL_DIR}/${SDK_ZIP}"
+download "${SDK_URL}" "${INSTALL_DIR}/${SDK_ZIP}"
 
 echo "Extracting Hexagon SDK..."
 unzip -q "${INSTALL_DIR}/${SDK_ZIP}" -d "${INSTALL_DIR}"
+# Reclaim disk before the next (larger) download.
+rm -f "${INSTALL_DIR}/${SDK_ZIP}"
 
 echo "Hexagon SDK installed at ${SDK_DIR}"
 export HEXAGON_SDK_ROOT="${SDK_DIR}"
@@ -38,10 +50,12 @@ TOOLCHAIN_TAR="Hexagon_open_access.Core.${TOOLCHAIN_VERSION}.Linux-Any.tar.gz"
 TOOLCHAIN_URL="https://softwarecenter.qualcomm.com/api/download/software/tools/Hexagon_open_access/Linux/Debian/${TOOLCHAIN_VERSION}/${TOOLCHAIN_TAR}"
 
 echo "Downloading Hexagon Toolchain version ${TOOLCHAIN_VERSION}..."
-wget -q --show-progress "${TOOLCHAIN_URL}" -O "${INSTALL_DIR}/${TOOLCHAIN_TAR}"
+download "${TOOLCHAIN_URL}" "${INSTALL_DIR}/${TOOLCHAIN_TAR}"
 
 echo "Extracting Hexagon Toolchain..."
 tar -xzf "${INSTALL_DIR}/${TOOLCHAIN_TAR}" -C "${INSTALL_DIR}"
+# Reclaim disk before the next download.
+rm -f "${INSTALL_DIR}/${TOOLCHAIN_TAR}"
 
 export HEXAGON_TOOLS="${INSTALL_DIR}/Tools"
 echo "Setting HEXAGON_TOOLS to ${HEXAGON_TOOLS}"
@@ -57,13 +71,15 @@ KL_DIR="${KL_BASE}/${KL_VERSION}"
 mkdir -p "${KL_BASE}"
 echo "Downloading Hexagon KL version ${KL_VERSION}..."
 
-wget -q --show-progress "${KL_URL}" -O "${KL_BASE}/${KL_OUTER_ZIP}"
+download "${KL_URL}" "${KL_BASE}/${KL_OUTER_ZIP}"
 
 INNER_ZIP="hexkl-1.0.0-beta1-6.4.0.0.zip"
 # Make sure inner zip exists inside the outer zip
 unzip -q -j "${KL_BASE}/${KL_OUTER_ZIP}" "${INNER_ZIP}" -d "${KL_BASE}"
 echo "Extracting Hexagon KL..."
 unzip -q "${KL_BASE}/${INNER_ZIP}" -d "${KL_DIR}"
+# Reclaim disk: drop the outer and inner archives now that KL is extracted.
+rm -f "${KL_BASE}/${KL_OUTER_ZIP}" "${KL_BASE}/${INNER_ZIP}"
 
 # Locate hexkl_addon directory 
 HEXKL_ADDON_DIR=$(find "${KL_DIR}" -type d -name "hexkl_addon" | head -n 1)

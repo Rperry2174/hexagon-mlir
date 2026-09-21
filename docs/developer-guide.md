@@ -6,6 +6,7 @@
 - [Contributions](#contributions-guide)
 - [Testing](#testing)
 - [Debugging](#debugging)
+- [Continuous Profiling](#continuous-profiling)
 - [Limitations](#limitations)  
 - [Additional Resources](#additional-resources)  
 
@@ -58,6 +59,14 @@ You can take a valid MLIR IR and lower it to LLVM IR, and see all the passes tha
 ```bash
 linalg-hexagon-opt test.mlir -linalg-to-llvm --mlir-print-ir-after-all
 ```
+
+## Continuous Profiling
+
+The Python test suites can push CPU profiles of the compilation pipeline to
+[Grafana Pyroscope](https://grafana.com/docs/pyroscope/latest/) while they
+run, producing flame graphs sliceable by test, kernel, pipeline phase, and
+commit. See [profiling-pyroscope.md](profiling-pyroscope.md) for setup and
+example workflows.
 
 ## Limitations
 
