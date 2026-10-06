@@ -106,9 +106,15 @@ struct LowerHexKLMatmulToMacro : public OpRewritePattern<hexkl::MatmulOp> {
     // ========================================================================
     // ACTIVATION BUFFER PREPARATION
     // ========================================================================
-    // Allocate temporary buffer and copy activation data
-    // This is necessary because rm_to_ah_f16_inplace modifies the buffer
-    // in-place, and we must not corrupt the original input buffer
+    // Allocate temporary buffer and copy activation data.
+    // The inplace AH transform mutates its argument, so the original input
+    // must not be that argument.
+    //
+    // HexKL 1.0-beta.2 writes ceil(rows, 32) * ceil(cols, 64) elements into
+    // this buffer and into the output of ah_to_rm. MatmulToHexKL macro mode
+    // only builds this op when M % 32 == 0 and K,N % 64 == 0, so the logical
+    // allocation is already the padded size. A smaller static buffer is an
+    // overrun; do not relax that gate without padding these allocs.
     auto actTempType =
         MemRefType::get(lhsType.getShape(), lhsType.getElementType());
     Value actTemp = memref::AllocOp::create(rewriter, loc, actTempType);
