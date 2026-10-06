@@ -58,8 +58,11 @@ def div_kernel(
 def test_vec_div():
     torch.manual_seed(42)  # Setting a seed for reproducibility.
 
-    x = torch.rand(N_ROWS, N_COLUMNS)
-    y = torch.rand(N_ROWS, N_COLUMNS)
+    x = torch.rand(N_ROWS, N_COLUMNS) * 2 - 1
+    # Signed divisors (bounded away from zero): the fast-inverse lowering must
+    # keep the sign of the divisor, not just its magnitude.
+    y = torch.rand(N_ROWS, N_COLUMNS) * 2 - 1
+    y = torch.where(y.abs() < 0.05, torch.ones_like(y), y)
     output = torch.empty_like(y)
 
     div_kernel[(1,)](x, y, output, N_ROWS, N_COLUMNS)

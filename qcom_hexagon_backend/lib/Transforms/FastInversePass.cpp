@@ -27,6 +27,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 #include "llvm/Support/raw_ostream.h"
+#include <limits>
 
 #define DEBUG_TYPE "fast-inverse"
 
@@ -138,6 +139,32 @@ static Value buildQuakeRsqrt(PatternRewriter &rewriter, Location loc, Value x) {
   return yrefb;
 }
 
+// Build IR that gives 'magnitude' (a positive f32 or vector of f32) the sign
+// of 'signSource', i.e. copysign(magnitude, signSource).
+//
+// Quake_rsqrt(q*q) is 1/|q|, so a division p/q rewritten as
+// p * Quake_rsqrt(q*q) loses the sign of the divisor: 1/-2 would become +0.5.
+// Transplanting the sign bit of q onto the (always positive) reciprocal
+// restores p/q for negative divisors.
+static Value copySign(PatternRewriter &rewriter, Location loc, Value magnitude,
+                      Value signSource) {
+  Type fTy = magnitude.getType();
+  assert(isF32OrF32Vector(fTy) && "expected f32 or vector of f32");
+  assert(signSource.getType() == fTy && "sign source must match magnitude");
+  Type iTy = getI32LikeType(fTy, rewriter.getContext());
+
+  Value signMask =
+      makeI32LikeConst(rewriter, loc, fTy, std::numeric_limits<int32_t>::min());
+  Value signSourceBits =
+      arith::BitcastOp::create(rewriter, loc, iTy, signSource);
+  Value signBits =
+      arith::AndIOp::create(rewriter, loc, signSourceBits, signMask);
+  Value magnitudeBits = arith::BitcastOp::create(rewriter, loc, iTy, magnitude);
+  Value resultBits =
+      arith::OrIOp::create(rewriter, loc, magnitudeBits, signBits);
+  return arith::BitcastOp::create(rewriter, loc, fTy, resultBits);
+}
+
 // Return true if 'value' is the LLVM intrinsic llvm.intr.sqrt
 static bool isLLVMSqrt(Value value) {
   if (auto *op = value.getDefiningOp()) {
@@ -165,9 +192,10 @@ static bool isSqrt(Value value) {
   return false;
 }
 
-// Pattern: arith.divf %p, %q --> %p * Quake_rsqrt(%q * %q)
+// Pattern: arith.divf %p, %q --> %p * copysign(Quake_rsqrt(%q * %q), %q)
 // that avoids a division (expensive and without HVX support),
 // by instead using one multiplication and the inexpensive Quake_rsqrt().
+// Quake_rsqrt(%q * %q) is 1/|%q|, hence the copysign to get back 1/%q.
 // Note that we do not apply this pattern when %q is of the form sqrt(%a),
 // to avoid the anti-optimization of getting back to %a, to then circle
 // back to something related to sqrt(%a) which we already had to start with
@@ -188,7 +216,8 @@ struct DivToQuakeAndSquaringAndMult : public OpRewritePattern<arith::DivFOp> {
     // VECTORIZED CASE: LHS is "x / broadcast(scalarDenom)"
     // with scalarDenom NOT of the form sqrt(a), and the rewrite will be:
     // num / broadcast(scalarDenom) -->
-    //       num * broadcast(Quake_rsqrt(scalarDenom*scalarDenom))
+    //   num * broadcast(copysign(Quake_rsqrt(scalarDenom*scalarDenom),
+    //                            scalarDenom))
     // -----------------------------------------------------------
     if (auto broadcastOp = denom.getDefiningOp<vector::BroadcastOp>()) {
       Value scalarDenom = broadcastOp.getSource();
@@ -204,12 +233,14 @@ struct DivToQuakeAndSquaringAndMult : public OpRewritePattern<arith::DivFOp> {
       // 1. Compute denom * denom.
       Value denom2 =
           arith::MulFOp::create(rewriter, loc, scalarDenom, scalarDenom);
-      // 2. Apply fast inverse square root to get 1/(denom*denom).
+      // 2. Apply fast inverse square root to get 1/|denom|.
       Value invScalar = buildQuakeRsqrt(rewriter, loc, denom2);
-      // 3. Broadcast the inverse to vector type.
-      Value invVec =
-          vector::BroadcastOp::create(rewriter, loc, vectorType, invScalar);
-      // 4. Multiply num with the broadcasted inverse.
+      // 3. Restore the sign of denom to get 1/denom.
+      Value invScalarSigned = copySign(rewriter, loc, invScalar, scalarDenom);
+      // 4. Broadcast the inverse to vector type.
+      Value invVec = vector::BroadcastOp::create(rewriter, loc, vectorType,
+                                                 invScalarSigned);
+      // 5. Multiply num with the broadcasted inverse.
       Value mul = arith::MulFOp::create(rewriter, loc, num, invVec);
 
       rewriter.replaceOp(divOp, mul);
@@ -218,7 +249,7 @@ struct DivToQuakeAndSquaringAndMult : public OpRewritePattern<arith::DivFOp> {
 
     // SCALAR CASE: LHS is "num / denom"
     // with denom NOT of the form sqrt(a), and the rewrite will be:
-    // num / denom --> num * Quake_rsqrt(denom*denom)
+    // num / denom --> num * copysign(Quake_rsqrt(denom*denom), denom)
     // ----------------------------------------
     // Do NOT rewrite x / sqrt(a), which would otherwise lead to
     // an anti-optimization: first getting back to 'a' by squaring it, to then
@@ -228,10 +259,12 @@ struct DivToQuakeAndSquaringAndMult : public OpRewritePattern<arith::DivFOp> {
 
     // 1. Compute denom * denom.
     Value denom2 = arith::MulFOp::create(rewriter, loc, denom, denom);
-    // 2. Apply fast inverse square root to get 1/(denom*denom).
+    // 2. Apply fast inverse square root to get 1/|denom|.
     Value invDenom2 = buildQuakeRsqrt(rewriter, loc, denom2);
-    // 3 Multiply num with the inverse.
-    Value newMul = arith::MulFOp::create(rewriter, loc, num, invDenom2);
+    // 3. Restore the sign of denom to get 1/denom.
+    Value invDenomSigned = copySign(rewriter, loc, invDenom2, denom);
+    // 4. Multiply num with the inverse.
+    Value newMul = arith::MulFOp::create(rewriter, loc, num, invDenomSigned);
     rewriter.replaceOp(divOp, newMul);
     return success();
   }

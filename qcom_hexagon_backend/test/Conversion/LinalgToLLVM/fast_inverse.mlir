@@ -6,11 +6,12 @@
 // CHECK-SAME:                                        %[[VAL_0:.*]]: vector<128xf32>,
 // CHECK-SAME:                                        %[[VAL_1:.*]]: memref<f32>,
 // CHECK-SAME:                                        %[[VAL_2:.*]]: memref<128xf32>) {
-// CHECK:           %[[VAL_3:.*]] = arith.constant 1 : i32
-// CHECK:           %[[VAL_4:.*]] = arith.constant 5.000000e-01 : f32
-// CHECK:           %[[VAL_5:.*]] = arith.constant 1.500000e+00 : f32
-// CHECK:           %[[VAL_6:.*]] = arith.constant 1597463007 : i32
-// CHECK:           %[[VAL_7:.*]] = arith.constant 0 : index
+// CHECK-DAG:       %[[VAL_3:.*]] = arith.constant 1 : i32
+// CHECK-DAG:       %[[VAL_4:.*]] = arith.constant 5.000000e-01 : f32
+// CHECK-DAG:       %[[VAL_5:.*]] = arith.constant 1.500000e+00 : f32
+// CHECK-DAG:       %[[VAL_6:.*]] = arith.constant 1597463007 : i32
+// CHECK-DAG:       %[[SIGN_MASK:.*]] = arith.constant -2147483648 : i32
+// CHECK-DAG:       %[[VAL_7:.*]] = arith.constant 0 : index
 // CHECK:           %[[VAL_8:.*]] = memref.load %[[VAL_1]][] : memref<f32>
 // CHECK:           %[[VAL_9:.*]] = arith.mulf %[[VAL_8]], %[[VAL_8]] : f32
 // CHECK:           %[[VAL_10:.*]] = arith.bitcast %[[VAL_9]] : f32 to i32
@@ -27,7 +28,13 @@
 // CHECK:           %[[VAL_21:.*]] = arith.mulf %[[VAL_20]], %[[VAL_4]] : f32
 // CHECK:           %[[VAL_22:.*]] = arith.subf %[[VAL_5]], %[[VAL_21]] : f32
 // CHECK:           %[[VAL_23:.*]] = arith.mulf %[[VAL_18]], %[[VAL_22]] : f32
-// CHECK:           %[[VAL_24:.*]] = vector.broadcast %[[VAL_23]] : f32 to vector<128xf32>
+// The reciprocal above is 1/|q|; the sign of the divisor q is restored before use.
+// CHECK:           %[[Q_BITS:.*]] = arith.bitcast %[[VAL_8]] : f32 to i32
+// CHECK:           %[[Q_SIGN:.*]] = arith.andi %[[Q_BITS]], %[[SIGN_MASK]] : i32
+// CHECK:           %[[INV_BITS:.*]] = arith.bitcast %[[VAL_23]] : f32 to i32
+// CHECK:           %[[SIGNED_BITS:.*]] = arith.ori %[[INV_BITS]], %[[Q_SIGN]] : i32
+// CHECK:           %[[SIGNED_INV:.*]] = arith.bitcast %[[SIGNED_BITS]] : i32 to f32
+// CHECK:           %[[VAL_24:.*]] = vector.broadcast %[[SIGNED_INV]] : f32 to vector<128xf32>
 // CHECK:           %[[VAL_25:.*]] = arith.mulf %[[VAL_0]], %[[VAL_24]] : vector<128xf32>
 // CHECK:           vector.transfer_write %[[VAL_25]], %[[VAL_2]][%[[VAL_7]]] {in_bounds = [true]} : vector<128xf32>, memref<128xf32>
 // CHECK:           return
@@ -68,11 +75,12 @@ func.func @test_scalar_division_f16(%arg0: vector<128xf16>, %arg1: memref<f16>, 
 // This test converts the fp32 vector division into numerator * reciprocal
 // where reciprocal is computed using fast inverse logic.
 // CHECK-LABEL:   func.func @test_fast_inverse_division_f32(
-// CHECK:         %[[VAL_3:.*]] = arith.constant dense<1> : vector<256xi32>
-// CHECK:         %[[VAL_4:.*]] = arith.constant dense<5.000000e-01> : vector<256xf32>
-// CHECK:         %[[VAL_5:.*]] = arith.constant dense<1.500000e+00> : vector<256xf32>
-// CHECK:         %[[VAL_6:.*]] = arith.constant dense<1597463007> : vector<256xi32>
-// CHECK:         %[[VAL_7:.*]] = arith.constant 0 : index
+// CHECK-DAG:     %[[VAL_3:.*]] = arith.constant dense<1> : vector<256xi32>
+// CHECK-DAG:     %[[VAL_4:.*]] = arith.constant dense<5.000000e-01> : vector<256xf32>
+// CHECK-DAG:     %[[VAL_5:.*]] = arith.constant dense<1.500000e+00> : vector<256xf32>
+// CHECK-DAG:     %[[VAL_6:.*]] = arith.constant dense<1597463007> : vector<256xi32>
+// CHECK-DAG:     %[[VSIGN_MASK:.*]] = arith.constant dense<-2147483648> : vector<256xi32>
+// CHECK-DAG:     %[[VAL_7:.*]] = arith.constant 0 : index
 // CHECK:         %[[VAL_8:.*]] = arith.mulf %[[VAL_1]], %[[VAL_1]] : vector<256xf32>
 // CHECK:         %[[VAL_9:.*]] = arith.bitcast %[[VAL_8]] : vector<256xf32> to vector<256xi32>
 // CHECK:         %[[VAL_10:.*]] = arith.shrui %[[VAL_9]], %[[VAL_3]] : vector<256xi32>
@@ -88,7 +96,13 @@ func.func @test_scalar_division_f16(%arg0: vector<128xf16>, %arg1: memref<f16>, 
 // CHECK:         %[[VAL_20:.*]] = arith.mulf %[[VAL_19]], %[[VAL_4]] : vector<256xf32>
 // CHECK:         %[[VAL_21:.*]] = arith.subf %[[VAL_5]], %[[VAL_20]] : vector<256xf32>
 // CHECK:         %[[VAL_22:.*]] = arith.mulf %[[VAL_17]], %[[VAL_21]] : vector<256xf32>
-// CHECK:         %[[VAL_23:.*]] = arith.mulf %[[VAL_0]], %[[VAL_22]] : vector<256xf32>
+// The reciprocal above is 1/|q|; the sign of the divisor q is restored before use.
+// CHECK:         %[[VQ_BITS:.*]] = arith.bitcast %[[VAL_1]] : vector<256xf32> to vector<256xi32>
+// CHECK:         %[[VQ_SIGN:.*]] = arith.andi %[[VQ_BITS]], %[[VSIGN_MASK]] : vector<256xi32>
+// CHECK:         %[[VINV_BITS:.*]] = arith.bitcast %[[VAL_22]] : vector<256xf32> to vector<256xi32>
+// CHECK:         %[[VSIGNED_BITS:.*]] = arith.ori %[[VINV_BITS]], %[[VQ_SIGN]] : vector<256xi32>
+// CHECK:         %[[VSIGNED_INV:.*]] = arith.bitcast %[[VSIGNED_BITS]] : vector<256xi32> to vector<256xf32>
+// CHECK:         %[[VAL_23:.*]] = arith.mulf %[[VAL_0]], %[[VSIGNED_INV]] : vector<256xf32>
 // CHECK:         vector.transfer_write %[[VAL_23]], %[[VAL_2]][%[[VAL_7]]] {in_bounds = [true]} : vector<256xf32>, memref<256xf32>
 // CHECK:         return    
 // CHECK:       }
