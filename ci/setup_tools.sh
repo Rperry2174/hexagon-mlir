@@ -22,7 +22,9 @@ echo "Downloading Hexagon SDK version ${SDK_VERSION}..."
 wget -q --show-progress "${SDK_URL}" -O "${INSTALL_DIR}/${SDK_ZIP}"
 
 echo "Extracting Hexagon SDK..."
-unzip -q "${INSTALL_DIR}/${SDK_ZIP}" -d "${INSTALL_DIR}"
+# -o: the runner keeps INSTALL_DIR between jobs, and unzip fails rather than
+# prompting for overwrites when stdin is not a terminal.
+unzip -qo "${INSTALL_DIR}/${SDK_ZIP}" -d "${INSTALL_DIR}"
 
 echo "Hexagon SDK installed at ${SDK_DIR}"
 export HEXAGON_SDK_ROOT="${SDK_DIR}"
@@ -47,14 +49,14 @@ export HEXAGON_TOOLS="${INSTALL_DIR}/Tools"
 echo "Setting HEXAGON_TOOLS to ${HEXAGON_TOOLS}"
 
 # HexKL 1.0-beta.2 is a single hexkl_addon archive (no nested zip).
-# Keep the extract directory at Hexagon_KL/1.0.0 so build.yml's HEXKL_ROOT
-# path stays stable; the cache key must change when this archive changes.
+# The extract directory is versioned so a tree left behind by an earlier
+# release on a persistent runner is never mistaken for this one.
 KL_VERSION="1.0.0-beta2"
 KL_ZIP="hexkl-1.0-beta.2.zip"
 KL_URL="https://softwarecenter.qualcomm.com/api/download/software/tools/Hexagon_KL/Linux/Debian/${KL_VERSION}/${KL_ZIP}"
 
 KL_BASE="${INSTALL_DIR}/Hexagon_KL"
-KL_DIR="${KL_BASE}/1.0.0"
+KL_DIR="${KL_BASE}/${KL_VERSION}"
 
 mkdir -p "${KL_DIR}"
 echo "Downloading Hexagon KL version ${KL_VERSION}..."
@@ -62,7 +64,7 @@ echo "Downloading Hexagon KL version ${KL_VERSION}..."
 wget -q --show-progress "${KL_URL}" -O "${KL_BASE}/${KL_ZIP}"
 
 echo "Extracting Hexagon KL..."
-unzip -q "${KL_BASE}/${KL_ZIP}" -d "${KL_DIR}"
+unzip -qo "${KL_BASE}/${KL_ZIP}" -d "${KL_DIR}"
 
 # Locate hexkl_addon directory 
 HEXKL_ADDON_DIR=$(find "${KL_DIR}" -type d -name "hexkl_addon" | head -n 1)
