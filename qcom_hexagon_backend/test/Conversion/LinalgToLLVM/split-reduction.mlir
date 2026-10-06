@@ -30,3 +30,23 @@ func.func @split_reduction(%input: tensor<256x64xf32>, %output: tensor<256xf32>)
 // CHECK: %[[VAL_14:.*]] = arith.addf %[[VAL_11]], %[[VAL_12]] : f32
 // CHECK: linalg.yield %[[VAL_14]] : f32
 // CHECK: return %reduced : tensor<256xf32>
+
+// Split reduction only tiles the innermost reduction dimension, and the
+// partial op it builds accumulates through an input operand, which is only
+// valid when every reduction dimension becomes parallel. A generic reducing
+// over two dimensions must therefore not be split (it would keep only the last
+// slice of the outer dimension) and falls back to regular tiling.
+#map4 = affine_map<(d0, d1) -> ()>
+func.func @no_split_for_multi_dim_reduction(%input: tensor<8x64xf32>, %output: tensor<f32>) -> tensor<f32> {
+ %reduced = linalg.generic {indexing_maps = [#map, #map4], iterator_types = ["reduction", "reduction"]} ins(%input : tensor<8x64xf32>) outs(%output : tensor<f32>) {
+ ^bb0(%in: f32, %out: f32):
+ %result = arith.addf %in, %out : f32
+ linalg.yield %result : f32
+ } -> tensor<f32>
+ return %reduced : tensor<f32>
+}
+// CHECK-LABEL: func.func @no_split_for_multi_dim_reduction(
+// CHECK-NOT: linalg.reduce
+// CHECK: iterator_types = ["reduction", "reduction"]
+// CHECK-NOT: linalg.reduce
+// CHECK: return
