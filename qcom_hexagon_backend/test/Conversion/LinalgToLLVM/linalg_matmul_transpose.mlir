@@ -1,4 +1,7 @@
 // RUN: linalg-hexagon-opt %s -pass-pipeline='builtin.module(func.func(schedule-matmul-for-hvx,linalg-generalize))' | FileCheck %s
+// The no-fold cases are checked without linalg-generalize, which would rewrite
+// the leftover linalg.transpose into a linalg.generic.
+// RUN: linalg-hexagon-opt %s -pass-pipeline='builtin.module(func.func(schedule-matmul-for-hvx))' | FileCheck %s --check-prefix=NOFOLD
 
 func.func @matmul_transpose_b(%arg0: tensor<1024x64xf32>, %arg1: tensor<1024x64xf32>, %arg2: tensor<1024x1024xf32>) {
   %1 = tensor.empty() : tensor<64x1024xf32>
@@ -76,12 +79,12 @@ func.func @batch_matmul_transpose_b_other_permutation(%arg0: tensor<12x1024x64xf
   return
 }
 
-// CHECK: func.func @batch_matmul_transpose_b_other_permutation
-// CHECK-SAME: (%[[ARG0:.*]]: tensor<12x1024x64xf32>, %[[ARG1:.*]]: tensor<1024x12x64xf32>, %[[ARG2:.*]]: tensor<12x1024x1024xf32>)
-// CHECK: %[[T:.*]] = linalg.transpose ins(%[[ARG1]] : tensor<1024x12x64xf32>)
-// CHECK-SAME: permutation = [1, 2, 0]
-// CHECK: linalg.generic
-// CHECK-SAME: ins(%[[ARG0]], %[[T]] : tensor<12x1024x64xf32>, tensor<12x64x1024xf32>)
+// NOFOLD: func.func @batch_matmul_transpose_b_other_permutation
+// NOFOLD-SAME: (%[[ARG0:.*]]: tensor<12x1024x64xf32>, %[[ARG1:.*]]: tensor<1024x12x64xf32>, %[[ARG2:.*]]: tensor<12x1024x1024xf32>)
+// NOFOLD: %[[T:.*]] = linalg.transpose ins(%[[ARG1]] : tensor<1024x12x64xf32>)
+// NOFOLD-SAME: permutation = [1, 2, 0]
+// NOFOLD: linalg.generic
+// NOFOLD-SAME: ins(%[[ARG0]], %[[T]] : tensor<12x1024x64xf32>, tensor<12x64x1024xf32>)
 
 // -----
 
@@ -94,9 +97,9 @@ func.func @matmul_transpose_b_shared(%arg0: tensor<1024x64xf32>, %arg1: tensor<1
   return %2, %transposed : tensor<1024x1024xf32>, tensor<64x1024xf32>
 }
 
-// CHECK: func.func @matmul_transpose_b_shared
-// CHECK-SAME: (%[[ARG0:.*]]: tensor<1024x64xf32>, %[[ARG1:.*]]: tensor<1024x64xf32>, %[[ARG2:.*]]: tensor<1024x1024xf32>)
-// CHECK: %[[T:.*]] = linalg.transpose ins(%[[ARG1]] : tensor<1024x64xf32>)
-// CHECK: %[[MM:.*]] = linalg.generic
-// CHECK-SAME: ins(%[[ARG0]], %[[T]] : tensor<1024x64xf32>, tensor<64x1024xf32>)
-// CHECK: return %[[MM]], %[[T]]
+// NOFOLD: func.func @matmul_transpose_b_shared
+// NOFOLD-SAME: (%[[ARG0:.*]]: tensor<1024x64xf32>, %[[ARG1:.*]]: tensor<1024x64xf32>, %[[ARG2:.*]]: tensor<1024x1024xf32>)
+// NOFOLD: %[[T:.*]] = linalg.transpose ins(%[[ARG1]] : tensor<1024x64xf32>)
+// NOFOLD: %[[MM:.*]] = linalg.generic
+// NOFOLD-SAME: ins(%[[ARG0]], %[[T]] : tensor<1024x64xf32>, tensor<64x1024xf32>)
+// NOFOLD: return %[[MM]], %[[T]]
