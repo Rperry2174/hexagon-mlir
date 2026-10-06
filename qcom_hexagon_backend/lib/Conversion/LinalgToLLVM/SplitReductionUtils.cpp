@@ -1486,6 +1486,15 @@ LogicalResult SplitReductionLinalgOp(linalg::LinalgOp generalizeOp) {
 
 bool IsSplitReductionCandidate(linalg::LinalgOp op) {
   auto generalizedOp = cast<linalg::GenericOp>(op);
+  // tileToPartialReduction moves the accumulator from outs to ins and the
+  // partial op reads it as a loop-invariant input instead of the out block
+  // argument. That is only correct if every reduction dimension is tiled and
+  // therefore turned into a parallel one; SplitReductionLinalgOp tiles only the
+  // innermost dimension, so any additional reduction dimension would remain a
+  // reduction iterator that overwrites the partial result instead of
+  // accumulating into it (keeping only the last slice).
+  if (generalizedOp.getNumReductionLoops() != 1)
+    return false;
   for (Operation &op : generalizedOp.getBody()->getOperations()) {
     if (!(isa<arith::AddFOp>(op) || isa<linalg::YieldOp>(op) ||
           isa<arith::MaxNumFOp>(op) || isa<arith::MinNumFOp>(op) ||

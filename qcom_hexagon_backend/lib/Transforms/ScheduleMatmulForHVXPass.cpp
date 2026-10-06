@@ -45,6 +45,20 @@ using namespace hexagon;
 
 namespace {
 
+/// Returns the transpose feeding `operand` if folding it into the matmul is
+/// valid: the permutation must swap exactly the two matrix dimensions
+/// (`expectedPermutation`) and the transposed value must have no other users,
+/// since the transpose is erased after the rewrite.
+static linalg::TransposeOp
+getFoldableTranspose(Value operand, ArrayRef<int64_t> expectedPermutation) {
+  auto transposeOp = operand.getDefiningOp<linalg::TransposeOp>();
+  if (!transposeOp || !transposeOp->hasOneUse())
+    return nullptr;
+  if (transposeOp.getPermutation() != expectedPermutation)
+    return nullptr;
+  return transposeOp;
+}
+
 struct ScheduleMatmulForHVXPass
     : public ::impl::ScheduleMatmulForHVXBase<ScheduleMatmulForHVXPass> {
   void runOnOperation() override;
@@ -78,13 +92,15 @@ void ScheduleMatmulForHVXPass::runOnOperation() {
   funcOp.walk([&](linalg::LinalgOp linalgOp) {
     if (isa_and_nonnull<linalg::MatmulOp>(linalgOp.getOperation()) &&
         !linalgOp->getAttrOfType<StringAttr>("library_call")) {
-      auto firstOperandDef = linalgOp.getDpsInputs()[0].getDefiningOp();
-      auto secondOperandDef = linalgOp.getDpsInputs()[1].getDefiningOp();
+      const int64_t matmulPermutation[] = {1, 0};
+      auto transposeA =
+          getFoldableTranspose(linalgOp.getDpsInputs()[0], matmulPermutation);
+      auto transposeB =
+          getFoldableTranspose(linalgOp.getDpsInputs()[1], matmulPermutation);
       rewriter.setInsertionPoint(linalgOp);
-      if (secondOperandDef && isa<linalg::TransposeOp>(secondOperandDef)) {
-        // Check if the second operand is a transpose op
+      if (transposeB) {
         // Convert linalg.transpose + linalg.matmul to linalg.matmul_transpose_b
-        auto transposeOp = dyn_cast<linalg::TransposeOp>(secondOperandDef);
+        auto transposeOp = transposeB;
         auto matmulTransposeBOp = linalg::MatmulTransposeBOp::create(
             rewriter, linalgOp.getLoc(),
             linalgOp.getOperation()->getResultTypes(),
@@ -92,10 +108,9 @@ void ScheduleMatmulForHVXPass::runOnOperation() {
             linalgOp.getDpsInits());
         rewriter.replaceOp(linalgOp, matmulTransposeBOp);
         rewriter.eraseOp(transposeOp);
-      } else if (firstOperandDef && isa<linalg::TransposeOp>(firstOperandDef)) {
-        // Check if the first operand is a transpose op
+      } else if (transposeA) {
         // Convert linalg.transpose + linalg.matmul to linalg.matmul_transpose_a
-        auto transposeOp = dyn_cast<linalg::TransposeOp>(firstOperandDef);
+        auto transposeOp = transposeA;
         auto matmulTransposeAOp = linalg::MatmulTransposeAOp::create(
             rewriter, linalgOp.getLoc(),
             linalgOp.getOperation()->getResultTypes(),
@@ -107,14 +122,16 @@ void ScheduleMatmulForHVXPass::runOnOperation() {
     } else if (isa_and_nonnull<linalg::BatchMatmulOp>(
                    linalgOp.getOperation()) &&
                !linalgOp->getAttrOfType<StringAttr>("library_call")) {
-      auto firstOperandDef = linalgOp.getDpsInputs()[0].getDefiningOp();
-      auto secondOperandDef = linalgOp.getDpsInputs()[1].getDefiningOp();
+      const int64_t batchMatmulPermutation[] = {0, 2, 1};
+      auto transposeA = getFoldableTranspose(linalgOp.getDpsInputs()[0],
+                                             batchMatmulPermutation);
+      auto transposeB = getFoldableTranspose(linalgOp.getDpsInputs()[1],
+                                             batchMatmulPermutation);
       rewriter.setInsertionPoint(linalgOp);
-      if (secondOperandDef && isa<linalg::TransposeOp>(secondOperandDef)) {
-        // Check if the second operand is a transpose op
+      if (transposeB) {
         // Convert linalg.transpose + linalg.batch_matmul to
         // linalg.batch_matmul_transpose_b op
-        auto transposeOp = dyn_cast<linalg::TransposeOp>(secondOperandDef);
+        auto transposeOp = transposeB;
         auto matmulTransposeBOp = linalg::BatchMatmulTransposeBOp::create(
             rewriter, linalgOp.getLoc(),
             linalgOp.getOperation()->getResultTypes(),
@@ -122,11 +139,10 @@ void ScheduleMatmulForHVXPass::runOnOperation() {
             linalgOp.getDpsInits());
         rewriter.replaceOp(linalgOp, matmulTransposeBOp);
         rewriter.eraseOp(transposeOp);
-      } else if (firstOperandDef && isa<linalg::TransposeOp>(firstOperandDef)) {
-        // Check if the first operand is a transpose op
+      } else if (transposeA) {
         // Convert linalg.transpose + linalg.batch_matmul to
         // linalg.batch_matmul_transpose_a op
-        auto transposeOp = dyn_cast<linalg::TransposeOp>(firstOperandDef);
+        auto transposeOp = transposeA;
         auto matmulTransposeAOp = linalg::BatchMatmulTransposeAOp::create(
             rewriter, linalgOp.getLoc(),
             linalgOp.getOperation()->getResultTypes(),
@@ -148,13 +164,17 @@ void ScheduleMatmulForHVXPass::runOnOperation() {
     }
   });
   for (auto linalgOp : batchMatmulOps) {
-    FailureOr<linalg::GenericOp> generalizedOp =
-        GeneralizeOp(rewriter, linalgOp);
+    // The interchange is derived from the named op's indexing maps; it must be
+    // computed first because generalization erases `linalgOp`.
     auto permutation = getBatchMatmulPermutation(linalgOp);
     if (permutation.empty()) {
       linalgOp->emitOpError("failed to determine batch matmul permutation");
       return signalPassFailure();
     }
+    FailureOr<linalg::GenericOp> generalizedOp =
+        GeneralizeOp(rewriter, linalgOp);
+    if (failed(generalizedOp))
+      return;
     rewriter.setInsertionPoint(*generalizedOp);
     // Apply the interchange transformation
     FailureOr<linalg::GenericOp> interchangedOp =
@@ -175,13 +195,16 @@ void ScheduleMatmulForHVXPass::runOnOperation() {
     }
   });
   for (auto linalgOp : matmulOps) {
-    FailureOr<linalg::GenericOp> generalizedOp =
-        GeneralizeOp(rewriter, linalgOp);
+    // See above: compute the interchange before `linalgOp` is erased.
     auto permutation = getMatmulPermutation(linalgOp);
     if (permutation.empty()) {
       linalgOp->emitOpError("failed to determine matmul permutation");
       return signalPassFailure();
     }
+    FailureOr<linalg::GenericOp> generalizedOp =
+        GeneralizeOp(rewriter, linalgOp);
+    if (failed(generalizedOp))
+      return;
     rewriter.setInsertionPoint(*generalizedOp);
     // Apply the interchange transformation
     FailureOr<linalg::GenericOp> interchangedOp =
