@@ -172,15 +172,14 @@ export HEXAGON_TOOLS=/path/to/Tools
 
 ##### Hexagon Kernel Library (HexKL)
 
-* Download the HexKL package.
-* Extract the outer zip.
-* Extract the inner zip (e.g., hexkl-1.0.0-beta1-6.4.0.0.zip).
-* Locate the `hexkl_addon` directory. 
+* Download HexKL 1.0-beta.2. That release is a single `hexkl_addon` archive
+  (there is no nested zip). The compiler emits the beta.2 layout-transform
+  symbol names.
+* Locate the `hexkl_addon` directory.
 
 ```bash
-wget https://softwarecenter.qualcomm.com/api/download/software/tools/Hexagon_KL/Linux/1.0.0/Hexagon_KL.Core.1.0.0.Linux-Any.zip
-unzip Hexagon_KL.Core.1.0.0.Linux-Any.zip 
-unzip hexkl-1.0.0-beta1-6.4.0.0.zip
+wget https://softwarecenter.qualcomm.com/api/download/software/tools/Hexagon_KL/Linux/Debian/1.0.0-beta2/hexkl-1.0-beta.2.zip
+unzip -q hexkl-1.0-beta.2.zip
 export HEXKL_ROOT=/path/to/hexkl_addon
 ```
 

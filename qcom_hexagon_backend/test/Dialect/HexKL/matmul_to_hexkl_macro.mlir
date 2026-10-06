@@ -89,6 +89,26 @@ func.func @non_aligned_dimensions(%arg0: tensor<33x64xf16>) -> tensor<33x128xf16
 // -----
 
 // ============================================================================
+// Test 4b: K multiple of 32 but not 64 (must NOT convert)
+// HexKL 1.0-beta.2's inplace AH transform writes ceil(K, 64) columns.
+// ============================================================================
+
+// CHECK-LABEL: func.func @k_not_multiple_of_64
+func.func @k_not_multiple_of_64(%arg0: tensor<32x32xf16>) -> tensor<32x64xf16> {
+  %weights = arith.constant dense<1.0> : tensor<32x64xf16>
+  %init = tensor.empty() : tensor<32x64xf16>
+
+  // CHECK: linalg.matmul
+  // CHECK-NOT: hexkl.matmul
+  %result = linalg.matmul ins(%arg0, %weights : tensor<32x32xf16>, tensor<32x64xf16>)
+                          outs(%init : tensor<32x64xf16>) -> tensor<32x64xf16>
+
+  return %result : tensor<32x64xf16>
+}
+
+// -----
+
+// ============================================================================
 // Test 5: Dimension at maximum limits (should convert)
 // ============================================================================
 

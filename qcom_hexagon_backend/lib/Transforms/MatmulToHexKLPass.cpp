@@ -122,24 +122,33 @@ struct MatmulToHexKL final : public OpRewritePattern<linalg::MatmulOp> {
                     std::to_string(MAX_N_INNER));
       }
 
-      const int64_t BLOCK_SIZE = 32;
+      // HexKL 1.0-beta.2 inplace layout transforms
+      // (hexkl_macro_f16_rm_to_f16_ah_inplace / hexkl_macro_f16_ah_to_f16_rm_inplace)
+      // write ceil(rows, 32) * ceil(cols, 64) elements back into the caller
+      // buffer. A buffer sized to the logical matrix is overrun unless rows
+      // are a multiple of 32 and both K and N are multiples of 64
+      // (HEXKL_HMX_F16_BLOCK_N_ROW / HEXKL_HMX_F16_BLOCK_N_{COL,INNER}_ALIGNMENT).
+      const int64_t ROW_ALIGN = 32;
+      const int64_t COL_ALIGN = 64;
 
-      if ((M % BLOCK_SIZE) != 0) {
+      if ((M % ROW_ALIGN) != 0) {
         return rewriter.notifyMatchFailure(
             op, "macro mode: M=" + std::to_string(M) + " must be multiple of " +
-                    std::to_string(BLOCK_SIZE));
+                    std::to_string(ROW_ALIGN));
       }
 
-      if (N % BLOCK_SIZE != 0) {
+      if (N % COL_ALIGN != 0) {
         return rewriter.notifyMatchFailure(
-            op, "macro mode: N=" + std::to_string(N) + " must be multiple of " +
-                    std::to_string(BLOCK_SIZE));
+            op, "macro mode: N=" + std::to_string(N) +
+                    " must be multiple of " + std::to_string(COL_ALIGN) +
+                    " (HexKL inplace AH transform writes 64-wide columns)");
       }
 
-      if (K % BLOCK_SIZE != 0) {
+      if (K % COL_ALIGN != 0) {
         return rewriter.notifyMatchFailure(
-            op, "macro mode: K=" + std::to_string(K) + " must be multiple of " +
-                    std::to_string(BLOCK_SIZE));
+            op, "macro mode: K=" + std::to_string(K) +
+                    " must be multiple of " + std::to_string(COL_ALIGN) +
+                    " (HexKL inplace AH transform writes 64-wide columns)");
       }
     }
 

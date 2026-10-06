@@ -87,12 +87,15 @@ std::string hexkl::getMacroUnlockHmxFnName() {
 }
 
 std::string hexkl::getMacroRmToAhF16InplaceFnName() {
-  static const std::string fnName = "hexkl_macro_rm_to_ah_f16_inplace";
+  // HexKL 1.0-beta.2 renamed this from hexkl_macro_rm_to_ah_f16_inplace.
+  // libhexkl_macro.a from that release does not export the beta.1 spelling.
+  static const std::string fnName = "hexkl_macro_f16_rm_to_f16_ah_inplace";
   return fnName;
 }
 
 std::string hexkl::getMacroAhToRmF16InplaceFnName() {
-  static const std::string fnName = "hexkl_macro_ah_to_rm_f16_inplace";
+  // HexKL 1.0-beta.2 renamed this from hexkl_macro_ah_to_rm_f16_inplace.
+  static const std::string fnName = "hexkl_macro_f16_ah_to_f16_rm_inplace";
   return fnName;
 }
 
