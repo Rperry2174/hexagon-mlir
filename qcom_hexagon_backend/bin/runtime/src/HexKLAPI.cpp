@@ -52,7 +52,7 @@ int hexkl_matmul_f16f16_f32(int64_t n_row, int64_t n_col, int64_t n_inner,
   const size_t vtcm_size = data_bytes_aligned + config_bytes;
 
   uint8_t *vtcm_base =
-      (uint8_t *)hexagon_runtime_alloc_1d(vtcm_size, align, true);
+      (uint8_t *)hexagon_runtime_alloc_1d_dsp(vtcm_size, align, true);
   if (!vtcm_base) {
     printf("[HEXKL_MICRO][ERROR] VTCM allocation failed\n");
     return AEE_ENOMEMORY;
@@ -63,7 +63,7 @@ int hexkl_matmul_f16f16_f32(int64_t n_row, int64_t n_col, int64_t n_inner,
   if ((hmx_config_offset + config_bytes) > vtcm_size ||
       (hmx_config_offset % align)) {
     printf("[HEXKL_MICRO][ERROR] HMX config placement invalid\n");
-    hexagon_runtime_free_1d(vtcm_base);
+    hexagon_runtime_free_1d_dsp(vtcm_base);
     return AEE_EFAILED;
   }
 
@@ -136,7 +136,7 @@ int hexkl_matmul_f16f16_f32(int64_t n_row, int64_t n_col, int64_t n_inner,
     }
   }
 
-  hexagon_runtime_free_1d(vtcm_base);
+  hexagon_runtime_free_1d_dsp(vtcm_base);
   return ret;
 }
 }
