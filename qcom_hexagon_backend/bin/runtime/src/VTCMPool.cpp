@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <vector>
 
 namespace {
@@ -261,6 +262,8 @@ VtcmPool::VtcmPool() {
 }
 
 VtcmPool::~VtcmPool() {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+
   // Check memory accounting
   assert(checkMemoryAccountedFor());
 
@@ -285,6 +288,8 @@ void *VtcmPool::Allocate(size_t nbytes) {
     vtcmDebugLog(1, "[VTCM] WARNING: Zero-size allocation requested");
     return nullptr;
   }
+
+  std::lock_guard<RuntimeMutex> lock(mutex_);
 
   size_t original_nbytes = nbytes;
   nbytes = alignSize(nbytes);
@@ -377,7 +382,7 @@ char *VtcmPool::allocateBestFit(size_t nbytes) {
 void VtcmPool::handleAllocationFailure(size_t nbytes) {
   size_t totalAllocated = calcTotalAllocated(allocations_);
   size_t largestFree = calcLargestFreeBlock(free_);
-  float fragScore = getFragmentationScore();
+  float fragScore = fragmentationScoreLocked();
 
   std::cerr << "[VTCM] ERROR: Allocation failed!" << std::endl;
   std::cerr << "  Requested: " << fmtKB(nbytes) << std::endl;
@@ -415,6 +420,8 @@ void VtcmPool::Free(void *ptr, size_t nbytes) {
     vtcmDebugLog(1, "[VTCM] WARNING: Attempted to free zero-size allocation");
     return;
   }
+
+  std::lock_guard<RuntimeMutex> lock(mutex_);
 
   size_t original_nbytes = nbytes;
   nbytes = alignSize(nbytes);
@@ -499,10 +506,45 @@ void VtcmPool::logFreeSuccess(char *ptr, size_t nbytes, size_t numCoalesced) {
 
 // Query methods
 size_t VtcmPool::getTotalAllocated() const {
-  return calcTotalAllocated(allocations_);
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  return totalAllocatedLocked();
 }
 
 size_t VtcmPool::getTotalFree() const {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  return totalFreeLocked();
+}
+
+size_t VtcmPool::getLargestFreeBlock() const {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  return largestFreeBlockLocked();
+}
+
+size_t VtcmPool::getNumAllocations() const {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  return allocations_.size();
+}
+
+size_t VtcmPool::getNumFreeBlocks() const {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  return free_.size();
+}
+
+float VtcmPool::getFragmentationScore() const {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  return fragmentationScoreLocked();
+}
+
+void VtcmPool::printState() const {
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  printStateLocked();
+}
+
+size_t VtcmPool::totalAllocatedLocked() const {
+  return calcTotalAllocated(allocations_);
+}
+
+size_t VtcmPool::totalFreeLocked() const {
   size_t total = 0;
   for (const auto &block : free_) {
     total += block.second;
@@ -510,16 +552,16 @@ size_t VtcmPool::getTotalFree() const {
   return total;
 }
 
-size_t VtcmPool::getLargestFreeBlock() const {
+size_t VtcmPool::largestFreeBlockLocked() const {
   return calcLargestFreeBlock(free_);
 }
 
-float VtcmPool::getFragmentationScore() const {
+float VtcmPool::fragmentationScoreLocked() const {
   if (free_.empty())
     return 0.0f;
 
-  size_t totalFree = getTotalFree();
-  size_t largestFree = getLargestFreeBlock();
+  size_t totalFree = totalFreeLocked();
+  size_t largestFree = largestFreeBlockLocked();
 
   if (totalFree == 0)
     return 0.0f;
@@ -530,17 +572,18 @@ float VtcmPool::getFragmentationScore() const {
   return 1.0f - (static_cast<float>(largestFree) / totalFree);
 }
 
-void VtcmPool::printState() const {
+void VtcmPool::printStateLocked() const {
   std::cout << "VTCM Pool State:" << std::endl;
   std::cout << "  Total: " << fmtMB(vtcmAllocatedSize_) << std::endl;
-  std::cout << "  Allocated: " << fmtKB(getTotalAllocated()) << " ("
-            << fmtPct(getTotalAllocated(), vtcmAllocatedSize_) << ")"
+  std::cout << "  Allocated: " << fmtKB(totalAllocatedLocked()) << " ("
+            << fmtPct(totalAllocatedLocked(), vtcmAllocatedSize_) << ")"
             << std::endl;
-  std::cout << "  Free: " << fmtKB(getTotalFree()) << std::endl;
-  std::cout << "  Largest free: " << fmtKB(getLargestFreeBlock()) << std::endl;
+  std::cout << "  Free: " << fmtKB(totalFreeLocked()) << std::endl;
+  std::cout << "  Largest free: " << fmtKB(largestFreeBlockLocked())
+            << std::endl;
   std::cout << "  Allocations: " << allocations_.size() << std::endl;
   std::cout << "  Free blocks: " << free_.size() << std::endl;
-  std::cout << "  Fragmentation: " << (int)(getFragmentationScore() * 100)
+  std::cout << "  Fragmentation: " << (int)(fragmentationScoreLocked() * 100)
             << "%" << std::endl;
 }
 
@@ -580,8 +623,8 @@ void VtcmPool::validateInvariants() const {
 }
 
 bool VtcmPool::checkMemoryAccountedFor() const {
-  size_t totalAllocated = getTotalAllocated();
-  size_t totalFree = getTotalFree();
+  size_t totalAllocated = totalAllocatedLocked();
+  size_t totalFree = totalFreeLocked();
   size_t accounted = totalAllocated + totalFree;
 
   if (accounted != vtcmAllocatedSize_) {
@@ -596,6 +639,7 @@ bool VtcmPool::checkMemoryAccountedFor() const {
 }
 
 void VtcmPool::DebugDump() {
-  printState();
+  std::lock_guard<RuntimeMutex> lock(mutex_);
+  printStateLocked();
   printMemoryMap(allocations_, free_, vtcmAllocatedPtr_, vtcmAllocatedSize_);
 }

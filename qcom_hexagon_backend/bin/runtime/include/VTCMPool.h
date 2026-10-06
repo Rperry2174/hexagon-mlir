@@ -11,8 +11,15 @@
 
 #include "HAP_compute_res.h"
 #include "HexagonCommon.h"
+#include "RuntimeMutex.h"
+#include <mutex>
 #include <vector>
 
+/// Process-wide VTCM pool. The compiled kernel calls Allocate/Free through
+/// HexagonAPI from every program instance; with threaded SPMD dispatch
+/// (ThreadManager::exec) or async threads those calls run concurrently on
+/// several QuRT threads, so all accesses to the allocation and free lists are
+/// serialized by `mutex_`.
 class VtcmPool {
 public:
   /// Allocates all of VTCM memory, and manages from the runtime
@@ -65,8 +72,8 @@ public:
   size_t getTotalAllocated() const;
   size_t getTotalFree() const;
   size_t getLargestFreeBlock() const;
-  size_t getNumAllocations() const { return allocations_.size(); }
-  size_t getNumFreeBlocks() const { return free_.size(); }
+  size_t getNumAllocations() const;
+  size_t getNumFreeBlocks() const;
   float getFragmentationScore() const;
   void printState() const;
 
@@ -83,6 +90,9 @@ private:
   /// Context for HAP_compute_res_*
   unsigned int contextId_{0};
 
+  /// Serializes every access to `allocations_` and `free_`.
+  mutable RuntimeMutex mutex_;
+
   /// List of allocations
   std::vector<std::pair<char *, size_t>> allocations_;
 
@@ -91,6 +101,8 @@ private:
 
   /// Pointer to allocated VTCM (for offset calculations)
   void *vtcmAllocatedPtr_{nullptr};
+
+  // All private helpers below expect `mutex_` to be held by the caller.
 
   // Allocation helpers
   char *tryAllocateFromEnd(size_t nbytes);
@@ -101,6 +113,13 @@ private:
   // Free helpers
   size_t coalesceAndAddToFreeList(char *ptr, size_t nbytes);
   void logFreeSuccess(char *ptr, size_t nbytes, size_t numCoalesced);
+
+  // Lock-free counterparts of the public query methods
+  size_t totalAllocatedLocked() const;
+  size_t totalFreeLocked() const;
+  size_t largestFreeBlockLocked() const;
+  float fragmentationScoreLocked() const;
+  void printStateLocked() const;
 
   // Validation (debug builds only)
   void validateInvariants() const;
