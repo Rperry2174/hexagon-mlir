@@ -10,15 +10,22 @@
 #define BUFFERMANAGER_H_
 
 #include <cassert>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 
 #include "HexagonBuffer.h"
 #include "HexagonBufferAlias.h"
 #include "HexagonCommon.h"
+#include "RuntimeMutex.h"
 
 class HexagonBufferAlias;
 
+/// Owns every HexagonBuffer handed out to the compiled kernel. The kernel's
+/// program instances may run concurrently on several QuRT threads (threaded
+/// SPMD dispatch, async threads), so the lookup tables are guarded by `mutex_`.
+/// Buffer construction/destruction and the actual data copies happen outside
+/// the lock; VtcmPool has its own mutex.
 class BufferManager {
 public:
   ~BufferManager() {
@@ -29,17 +36,25 @@ public:
 
   /// Free a HexagonBuffer.
   void FreeHexagonBuffer(void *ptr) {
-    auto it = bufferMap_.find(ptr);
-    CHECK((it != bufferMap_.end()),
-          "Attempt made to free unknown or already freed allocation");
-    CHECK(it->second != nullptr);
-    bufferMap_.erase(it);
+    std::unique_ptr<HexagonBuffer> buf;
+    {
+      std::lock_guard<RuntimeMutex> lock(mutex_);
+      auto it = bufferMap_.find(ptr);
+      CHECK((it != bufferMap_.end()),
+            "Attempt made to free unknown or already freed allocation");
+      CHECK(it->second != nullptr);
+      buf = std::move(it->second);
+      bufferMap_.erase(it);
+    }
+    // Destroyed outside the lock: ~HexagonBuffer hands VTCM back through
+    // VtcmPool, which takes its own mutex.
   }
 
   /// Allocate a HexagonBuffer.
   template <typename... Args> void *AllocateHexagonBuffer(Args &&...args) {
     auto buf = std::make_unique<HexagonBuffer>(std::forward<Args>(args)...);
     void *ptr = buf->GetPointer();
+    std::lock_guard<RuntimeMutex> lock(mutex_);
     bufferMap_.insert({ptr, std::move(buf)});
     return ptr;
   }
@@ -47,6 +62,7 @@ public:
   /// Returns a pointer to crouton-table that is constructed using `nBytes`
   /// sized `buffer`. The table size is expected to be `nBytes/CROUTON_SIZE`
   void *CreateBufferAlias(void *ptr, size_t nbytes) {
+    std::lock_guard<RuntimeMutex> lock(mutex_);
     HexagonBuffer *buffer = FindBuffer<HexagonBuffer>(ptr, bufferMap_);
     auto bufferAlias =
         std::make_unique<hexagon::HexagonBufferAlias>(*buffer, nbytes);
@@ -62,6 +78,7 @@ public:
   /// Takes the crouton pointer table and returns the base pointer to the
   /// contiguous memref underneath
   void *GetOrigBufferFromAlias(void *croutonTablePtr) {
+    std::lock_guard<RuntimeMutex> lock(mutex_);
     hexagon::HexagonBufferAlias *aliasPtr =
         FindBuffer<hexagon::HexagonBufferAlias>(croutonTablePtr,
                                                 bufferAliasMap_);
@@ -73,7 +90,7 @@ public:
   }
 
   /// Finds and returns the pointer from the given map if it exists and a
-  /// nullptr otherwise
+  /// nullptr otherwise. Caller must hold `mutex_`.
   template <typename BufferType>
   BufferType *
   FindBuffer(void *ptr,
@@ -87,8 +104,13 @@ public:
 
   /// HexagonBuffer copy operations
   void Copy(void *dst, void *src, size_t nbytes) {
-    HexagonBuffer *hb_src = FindBuffer<HexagonBuffer>(src, bufferMap_);
-    HexagonBuffer *hb_dst = FindBuffer<HexagonBuffer>(dst, bufferMap_);
+    HexagonBuffer *hb_src;
+    HexagonBuffer *hb_dst;
+    {
+      std::lock_guard<RuntimeMutex> lock(mutex_);
+      hb_src = FindBuffer<HexagonBuffer>(src, bufferMap_);
+      hb_dst = FindBuffer<HexagonBuffer>(dst, bufferMap_);
+    }
 
     bool isSrcHb = (hb_src != nullptr);
     bool isDstHb = (hb_dst != nullptr);
@@ -105,6 +127,9 @@ public:
   }
 
 private:
+  /// Serializes access to the two maps below.
+  RuntimeMutex mutex_;
+
   /// Contains the HexagonBuffer objects managed by this class.
   std::unordered_map<void *, std::unique_ptr<HexagonBuffer>> bufferMap_;
 

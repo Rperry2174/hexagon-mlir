@@ -20,6 +20,10 @@
 // wait operation blocks till the DMA transfer specified by the input token
 // completes.
 //
+// A UserDMA object drives the DMA engine of the thread that created it and is
+// not thread-safe; RuntimeDMA.cc keeps one instance per thread. Tokens are only
+// meaningful on the thread that issued the corresponding copy.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef HEXAGONBACKEND_BIN_RUNTIME_USERDMA_H

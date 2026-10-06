@@ -28,10 +28,22 @@
 namespace hexagon {
 namespace userdma {
 
-// Create a static object of HexagonUserDMA to be used in DMAStart and
-// DMAWait APIs. TODO: Make HexagonUserDMA class as a singleton and
-// call its static member function to get its unique instance
-static UserDMA hexDMA(hexagon::userdma::MAX_NUM_DMA_DESCRIPTORS);
+// One UserDMA instance per thread, created on first use.
+//
+// The user DMA engine is a per-hardware-thread resource (DM0 and the
+// descriptor chain it walks belong to the thread that issued dmstart/dmlink,
+// see UserDMARegisters.h) and QuRT context-switches that state together with
+// the software thread. The descriptor ring buffer, `isFirstDMA` and
+// `tailDMADesc` therefore describe *this thread's* engine and must not be
+// shared: with threaded SPMD dispatch every program instance runs the kernel
+// body, including its dma_start/dma_wait pairs, on its own QuRT thread. A
+// single process-wide instance made those threads race on the ring buffer
+// (RingBuffer::alloc asserting `head == tail`, descriptors overwritten while in
+// flight) and link descriptors into a chain owned by another engine.
+static UserDMA &threadLocalDMA() {
+  static thread_local UserDMA hexDMA(hexagon::userdma::MAX_NUM_DMA_DESCRIPTORS);
+  return hexDMA;
+}
 
 /*!
  * Initiate DMA to copy memory from source to destination address
@@ -48,8 +60,8 @@ extern "C" uint32_t
 hexagon_runtime_dma_start(void *src, AddrSpace srcAS, void *dst,
                           AddrSpace dstAS, uint32_t length, bool bypassCacheSrc,
                           bool bypassCacheDst, DMAStatus *status) {
-  return hexDMA.copy(src, srcAS, dst, dstAS, length, bypassCacheSrc,
-                     bypassCacheDst, status);
+  return threadLocalDMA().copy(src, srcAS, dst, dstAS, length, bypassCacheSrc,
+                               bypassCacheDst, status);
 }
 
 /*!
@@ -83,9 +95,9 @@ extern "C" uint32_t hexagon_runtime_dma2d_start(
     uint32_t height, uint32_t srcStride, uint32_t dstStride,
     bool bypassCacheSrc, bool bypassCacheDst, bool isOrdered,
     uint32_t cacheAllocationPolicy, DMAStatus *status) {
-  return hexDMA.copy2D(src, srcAS, dst, dstAS, width, height, srcStride,
-                       dstStride, bypassCacheSrc, bypassCacheDst, isOrdered,
-                       cacheAllocationPolicy, status);
+  return threadLocalDMA().copy2D(
+      src, srcAS, dst, dstAS, width, height, srcStride, dstStride,
+      bypassCacheSrc, bypassCacheDst, isOrdered, cacheAllocationPolicy, status);
 }
 
 /*!
@@ -93,7 +105,9 @@ extern "C" uint32_t hexagon_runtime_dma2d_start(
  * complete
  * token: token corresponding to the DMA transfer to wait
  */
-extern "C" void hexagon_runtime_dma_wait(uint32_t token) { hexDMA.wait(token); }
+extern "C" void hexagon_runtime_dma_wait(uint32_t token) {
+  threadLocalDMA().wait(token);
+}
 
 } // namespace userdma
 } // namespace hexagon
