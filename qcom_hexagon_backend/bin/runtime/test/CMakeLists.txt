@@ -12,6 +12,7 @@ set(HEXAGON_RUNTIME_TEST_SRCS
     test/UserDMATests.cpp
     test/UserDMA2DTests.cpp
     test/HexagonBufferAliasTests.cpp
+    test/HexagonRuntimeConcurrencyTests.cpp
 )
 
 # Convert the files back to list
