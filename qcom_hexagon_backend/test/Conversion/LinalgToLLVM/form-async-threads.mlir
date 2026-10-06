@@ -31,7 +31,8 @@ module {
 // CHECK:   %[[B0:.+]] = arith.constant 0 : index
 // CHECK:   %[[B1024:.+]] = arith.constant 1024 : index
 // CHECK:   %[[B1:.+]] = arith.constant 1 : index
-// CHECK:   %[[N_THREADS:.+]] = arith.divui %[[B1024]], %[[B1]] : index
+// CHECK:   %[[RANGE:.+]] = arith.subi %[[B1024]], %[[B0]] : index
+// CHECK:   %[[N_THREADS:.+]] = arith.ceildivui %[[RANGE]], %[[B1]] : index
 // CHECK:   %[[G:.+]] = async.create_group %[[N_THREADS]] : !async.group
 // CHECK:   scf.for %[[A3:.+]] = %[[B0]] to %[[B1024]] step %[[B1]] {
 // CHECK:     %[[T0:.+]] = async.execute {
